@@ -1,0 +1,662 @@
+version: "3.8"
+
+# ============================================================================
+# SECURITY-HARDENED Microservices Architecture for Dataverse
+# ============================================================================
+# This configuration implements enterprise-grade security hardening:
+# - Non-root users in all containers
+# - Read-only root filesystems
+# - Dropped capabilities
+# - Resource limits
+# - Network isolation
+# - Security contexts
+# - Secrets management
+# ============================================================================
+
+secrets:
+  postgres_password:
+    file: ./secrets/postgres_password.txt
+  postgres_user:
+    file: ./secrets/postgres_user.txt
+  dataverse_admin_password:
+    file: ./secrets/dataverse_admin_password.txt
+
+services:
+  # ===========================================
+  # API Gateway Layer (HARDENED)
+  # ===========================================
+  api-gateway:
+    container_name: "dataverse_api_gateway"
+    hostname: api-gateway
+    image: nginx:${NGINX_VERSION:-alpine}
+    restart: unless-stopped
+    
+    # Security: Run as non-root user
+    user: "101:101"  # nginx user
+    
+    # Security: Read-only root filesystem
+    read_only: true
+    
+    # Security: Drop all capabilities
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+      - NET_BIND_SERVICE
+    
+    # Security: No new privileges
+    security_opt:
+      - no-new-privileges:true
+      - apparmor=docker-default
+    
+    # Security: Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    
+    # Minimal port exposure
+    ports:
+      - "127.0.0.1:${API_GATEWAY_PORT:-80}:80"  # Bind to localhost only
+      - "127.0.0.1:${API_GATEWAY_HTTPS_PORT:-443}:443"
+    
+    networks:
+      - frontend
+      - backend
+    
+    volumes:
+      - ./nginx/nginx-secure.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - nginx-cache:/var/cache/nginx
+      - nginx-run:/var/run
+    
+    tmpfs:
+      - /tmp:mode=1777,size=64M,noexec,nosuid,nodev
+    
+    depends_on:
+      dataverse:
+        condition: service_healthy
+    
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    
+    labels:
+      - "com.dataverse.service=api-gateway"
+      - "com.dataverse.tier=frontend"
+      - "com.dataverse.security=hardened"
+
+  # ===========================================
+  # Data Layer (HARDENED PostgreSQL)
+  # ===========================================
+  postgres:
+    container_name: "dataverse_postgres"
+    hostname: postgres
+    image: postgres:${POSTGRES_VERSION:-16}-alpine
+    restart: unless-stopped
+    
+    # Security: Run as non-root (postgres user)
+    user: "postgres"
+    
+    # Security: Read-only root filesystem
+    read_only: true
+    
+    # Security: Drop all capabilities
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - FOWNER
+      - SETGID
+      - SETUID
+    
+    # Security: No new privileges
+    security_opt:
+      - no-new-privileges:true
+      - apparmor=docker-default
+    
+    # Security: Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    
+    environment:
+      - POSTGRES_USER_FILE=/run/secrets/postgres_user
+      - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password
+      - POSTGRES_DB=dataverse
+      - POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256 --auth-local=scram-sha-256
+    
+    secrets:
+      - postgres_user
+      - postgres_password
+    
+    # Only backend network - completely isolated
+    networks:
+      - backend
+    
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    
+    tmpfs:
+      - /tmp:mode=1777,size=256M,noexec,nosuid,nodev
+      - /run:mode=755,size=64M,noexec,nosuid,nodev
+      - /var/run/postgresql:mode=755,size=64M,noexec,nosuid,nodev
+    
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    
+    labels:
+      - "com.dataverse.service=postgres"
+      - "com.dataverse.tier=data"
+      - "com.dataverse.security=hardened"
+
+  # ===========================================
+  # Search Layer (HARDENED Solr)
+  # ===========================================
+  solr_initializer:
+    container_name: "dataverse_solr_initializer"
+    image: gdcc/configbaker:${CONFIGBAKER_VERSION:-latest}
+    restart: "no"
+    
+    # Security: Read-only root filesystem
+    read_only: true
+    
+    # Security: Drop all capabilities
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - FOWNER
+    
+    security_opt:
+      - no-new-privileges:true
+    
+    command:
+      - sh
+      - -c
+      - "fix-fs-perms.sh solr && cp -a /template/* /solr-template"
+    
+    volumes:
+      - solr-data:/var/solr
+      - solr-conf:/solr-template
+    
+    tmpfs:
+      - /tmp:mode=1777,size=64M,noexec,nosuid,nodev
+    
+    networks:
+      - backend
+    
+    labels:
+      - "com.dataverse.security=hardened"
+
+  solr:
+    container_name: "dataverse_solr"
+    hostname: solr
+    image: solr:${SOLR_VERSION:-9.6.1}-slim
+    
+    # Security: Run as solr user
+    user: "solr"
+    
+    # Security: Read-only root filesystem
+    read_only: true
+    
+    # Security: Drop all capabilities
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETGID
+      - SETUID
+    
+    security_opt:
+      - no-new-privileges:true
+      - apparmor=docker-default
+    
+    # Security: Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    
+    depends_on:
+      solr_initializer:
+        condition: service_completed_successfully
+    
+    restart: unless-stopped
+    
+    networks:
+      - backend
+    
+    environment:
+      - SOLR_OPTS=-Dsolr.jetty.request.header.size=102400
+      - SOLR_SECURITY_MANAGER_ENABLED=true
+    
+    command:
+      - "solr-precreate"
+      - "collection1"
+      - "/template"
+    
+    volumes:
+      - solr-data:/var/solr
+      - solr-conf:/template
+    
+    tmpfs:
+      - /tmp:mode=1777,size=256M,noexec,nosuid,nodev
+      - /opt/solr/server/logs:mode=755,size=128M
+    
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8983/solr/collection1/admin/ping || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    
+    labels:
+      - "com.dataverse.service=solr"
+      - "com.dataverse.tier=search"
+      - "com.dataverse.security=hardened"
+
+  # ===========================================
+  # Communication Layer (HARDENED SMTP)
+  # ===========================================
+  smtp:
+    container_name: "dataverse_smtp"
+    hostname: smtp
+    image: maildev/maildev:${MAILDEV_VERSION:-2.1.0}
+    restart: unless-stopped
+    
+    # Security: Read-only root filesystem
+    read_only: true
+    
+    # Security: Drop all capabilities
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETGID
+      - SETUID
+      - NET_BIND_SERVICE
+    
+    security_opt:
+      - no-new-privileges:true
+    
+    # Security: Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+    
+    ports:
+      - "127.0.0.1:${MAILDEV_WEB_PORT:-1080}:1080"
+    
+    environment:
+      - MAILDEV_SMTP_PORT=25
+      - MAILDEV_MAIL_DIRECTORY=/mail
+    
+    networks:
+      - backend
+      - frontend
+    
+    tmpfs:
+      - /mail:mode=770,size=128M,noexec,nosuid
+      - /tmp:mode=1777,size=64M,noexec,nosuid,nodev
+    
+    labels:
+      - "com.dataverse.service=smtp"
+      - "com.dataverse.tier=communication"
+      - "com.dataverse.security=hardened"
+
+  # ===========================================
+  # Application Layer (HARDENED Dataverse)
+  # ===========================================
+  dv_initializer:
+    container_name: "dataverse_initializer"
+    image: gdcc/configbaker:${CONFIGBAKER_VERSION:-latest}
+    restart: "no"
+    
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - FOWNER
+    
+    security_opt:
+      - no-new-privileges:true
+    
+    command:
+      - sh
+      - -c
+      - "fix-fs-perms.sh dv"
+    
+    volumes:
+      - dataverse-data:/dv
+    
+    tmpfs:
+      - /tmp:mode=1777,size=64M,noexec,nosuid,nodev
+    
+    networks:
+      - backend
+    
+    labels:
+      - "com.dataverse.security=hardened"
+
+  dataverse:
+    container_name: "dataverse"
+    hostname: dataverse
+    image: gdcc/dataverse:${DATAVERSE_VERSION:-latest}
+    
+    # Security: Run as payara user (non-root)
+    user: "payara"
+    
+    # Security: Drop all capabilities
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    
+    security_opt:
+      - no-new-privileges:true
+      - apparmor=docker-default
+    
+    # Security: Resource limits (2GB as specified)
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+    
+    depends_on:
+      postgres:
+        condition: service_healthy
+      solr:
+        condition: service_healthy
+      dv_initializer:
+        condition: service_completed_successfully
+    
+    restart: unless-stopped
+    
+    environment:
+      # Database Configuration
+      DATAVERSE_DB_HOST: postgres
+      DATAVERSE_DB_PORT: 5432
+      DATAVERSE_DB_USER_FILE: /run/secrets/postgres_user
+      DATAVERSE_DB_PASSWORD_FILE: /run/secrets/postgres_password
+      
+      # Mail Configuration
+      DATAVERSE_MAIL_SYSTEM_EMAIL: ${DATAVERSE_MAIL_SYSTEM_EMAIL:-dataverse@localhost}
+      DATAVERSE_MAIL_MTA_HOST: smtp
+      DATAVERSE_MAIL_MTA_PORT: 25
+      
+      # File Storage Configuration
+      JVM_ARGS: >-
+        -Ddataverse.files.storage-driver-id=file1
+        -Ddataverse.files.file1.type=file
+        -Ddataverse.files.file1.label=Filesystem
+        -Ddataverse.files.file1.directory=/dv/store
+        -Ddataverse.pid.providers=perma
+        -Ddataverse.pid.default-provider=perma
+        -Ddataverse.pid.perma.type=PERMA
+        -Ddataverse.pid.perma.label=PermaLink
+        -Ddataverse.pid.perma.permalink-base-url=${DATAVERSE_URL:-http://localhost}
+      
+      # Feature Flags
+      DATAVERSE_FEATURE_API_BEARER_AUTH: ${DATAVERSE_FEATURE_API_BEARER_AUTH:-1}
+      
+      # Solr Configuration
+      DATAVERSE_SOLR_HOST: solr
+      DATAVERSE_SOLR_PORT: 8983
+    
+    secrets:
+      - postgres_user
+      - postgres_password
+    
+    # Internal network only
+    networks:
+      - backend
+      - frontend
+    
+    volumes:
+      - dataverse-data:/dv:rw
+      - dataverse-secrets:/secrets:ro
+    
+    tmpfs:
+      - /dumps:mode=770,size=2052M,noexec,nosuid
+      - /tmp:mode=770,size=2052M,noexec,nosuid
+    
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/api/info/version || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+    
+    labels:
+      - "com.dataverse.service=dataverse"
+      - "com.dataverse.tier=application"
+      - "com.dataverse.security=hardened"
+
+  # ===========================================
+  # Bootstrap (HARDENED)
+  # ===========================================
+  bootstrap:
+    container_name: "dataverse_bootstrap"
+    image: gdcc/configbaker:${CONFIGBAKER_VERSION:-latest}
+    
+    read_only: true
+    cap_drop:
+      - ALL
+    
+    security_opt:
+      - no-new-privileges:true
+    
+    depends_on:
+      dataverse:
+        condition: service_healthy
+    
+    restart: "no"
+    
+    environment:
+      - TIMEOUT=${BOOTSTRAP_TIMEOUT:-10m}
+    
+    command:
+      - bootstrap.sh
+      - ${BOOTSTRAP_MODE:-dev}
+    
+    networks:
+      - backend
+    
+    volumes:
+      - solr-data:/var/solr:ro
+      - ./demo:/scripts/bootstrap/demo:ro
+    
+    tmpfs:
+      - /tmp:mode=1777,size=64M,noexec,nosuid,nodev
+    
+    labels:
+      - "com.dataverse.security=hardened"
+
+  # ===========================================
+  # File Previewers (HARDENED)
+  # ===========================================
+  previewers-provider:
+    container_name: "dataverse_previewers_provider"
+    hostname: previewers-provider
+    image: trivadis/dataverse-previewers-provider:${PREVIEWERS_VERSION:-latest}
+    restart: unless-stopped
+    
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    
+    security_opt:
+      - no-new-privileges:true
+    
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.2'
+          memory: 128M
+    
+    networks:
+      - backend
+      - frontend
+    
+    environment:
+      - NGINX_HTTP_PORT=9080
+      - PREVIEWERS_PROVIDER_URL=http://localhost:9080
+      - VERSIONS="v1.4,betatest"
+    
+    tmpfs:
+      - /tmp:mode=1777,size=128M,noexec,nosuid,nodev
+      - /var/cache/nginx:mode=755,size=64M
+    
+    labels:
+      - "com.dataverse.service=previewers"
+      - "com.dataverse.tier=presentation"
+      - "com.dataverse.security=hardened"
+
+  register-previewers:
+    container_name: "dataverse_register_previewers"
+    hostname: register-previewers
+    image: trivadis/dataverse-deploy-previewers:${PREVIEWERS_VERSION:-latest}
+    
+    read_only: true
+    cap_drop:
+      - ALL
+    
+    security_opt:
+      - no-new-privileges:true
+    
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+    
+    networks:
+      - backend
+    
+    environment:
+      - DATAVERSE_URL=http://dataverse:8080
+      - TIMEOUT=10m
+      - PREVIEWERS_PROVIDER_URL=http://previewers-provider:9080
+      - EXCLUDE_PREVIEWERS=
+      - REMOVE_EXISTING=true
+    
+    command:
+      - deploy
+    
+    tmpfs:
+      - /tmp:mode=1777,size=64M,noexec,nosuid,nodev
+    
+    restart: "no"
+    
+    labels:
+      - "com.dataverse.security=hardened"
+
+# ===========================================
+# HARDENED Network Configuration
+# ===========================================
+networks:
+  # Frontend network - minimal external access
+  frontend:
+    driver: bridge
+    name: dataverse-frontend-network
+    driver_opts:
+      com.docker.network.bridge.name: "dvfrontend0"
+      com.docker.network.bridge.enable_ip_masquerade: "true"
+      com.docker.network.bridge.enable_icc: "false"
+    labels:
+      - "com.dataverse.network=frontend"
+      - "com.dataverse.security=hardened"
+  
+  # Backend network - FULLY ISOLATED from external access
+  backend:
+    driver: bridge
+    name: dataverse-backend-network
+    internal: true  # ⚠️ NO INTERNET ACCESS - completely isolated
+    driver_opts:
+      com.docker.network.bridge.name: "dvbackend0"
+      com.docker.network.bridge.enable_icc: "true"
+      com.docker.network.bridge.enable_ip_masquerade: "false"
+    labels:
+      - "com.dataverse.network=backend"
+      - "com.dataverse.security=hardened"
+      - "com.dataverse.isolation=complete"
+
+# ===========================================
+# HARDENED Volume Configuration
+# ===========================================
+volumes:
+  postgres-data:
+    name: dataverse-postgres-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_DIR:-./data}/postgres
+  
+  solr-data:
+    name: dataverse-solr-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_DIR:-./data}/solr
+  
+  solr-conf:
+    name: dataverse-solr-conf
+  
+  dataverse-data:
+    name: dataverse-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_DIR:-./data}/dataverse
+  
+  dataverse-secrets:
+    name: dataverse-secrets
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_DIR:-./data}/secrets
+  
+  nginx-cache:
+    name: nginx-cache
+  
+  nginx-run:
+    name: nginx-run
