@@ -1,0 +1,38 @@
+# Environment files with secrets
+.env
+*.env.local
+
+# Secrets directory
+secrets/
+data/secrets/
+
+# Persistent data (managed separately)
+data/postgres/
+data/solr/
+data/dataverse/
+
+# Backup files
+backups/
+*.sql
+*.dump
+*.zip
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+tmp/
+temp/
