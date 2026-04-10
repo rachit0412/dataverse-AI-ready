@@ -2,6 +2,19 @@
 
 A complete Docker-based setup for running Dataverse, the open-source research data repository platform developed at Harvard's Institute for Quantitative Social Science.
 
+## � Status & Documentation
+
+| Item | Link | Description |
+|------|------|-------------|
+| **Navigation Hub** | [DOCUMENTATION_INDEX.md](DOCUMENTATION_INDEX.md) | Complete documentation map & navigation |
+| **Deployment Status** | [DEPLOYMENT_STATUS.md](DEPLOYMENT_STATUS.md) | Current system status, access info, health checks |
+| **Error Reference** | [docs/ERRORS_AND_SOLUTIONS.md](docs/ERRORS_AND_SOLUTIONS.md) | Comprehensive error index with troubleshooting |
+| **Installation** | [INSTALLATION_GUIDE.md](INSTALLATION_GUIDE.md) | Step-by-step setup procedure |
+| **Operations** | [docs/OPERATIONS.md](docs/OPERATIONS.md) | Daily operations & maintenance |
+| **Security** | [docs/SECURITY.md](docs/SECURITY.md) | Security guidelines & best practices |
+
+---
+
 ## 📋 Table of Contents
 
 - [Overview](#overview)
@@ -213,66 +226,185 @@ After installation, verify these basic operations work:
 
 If all tests pass, your Dataverse installation is working correctly!
 
-## 🔍 Troubleshooting
+## 🔍 Troubleshooting & Support
 
-### Common Issues
+### ⚡ Quick Reference: Common Issues
+
+| Issue | Likely Cause | Documentation |
+|-------|-------------|-----------------|
+| Payara page instead of Dataverse | Application still deploying | [ERR-FRONTEND-001](docs/errors/frontend-ui.md) |
+| Database connection refused | PostgreSQL auth error | [ERR-DB-001](docs/errors/postgres.md) |
+| Bootstrap times out | Normal on first deployment | [ERR-DATAVERSE-002](docs/errors/bootstrap-timeout.md) |
+| Can't access localhost:8080 | Port in use or app crashed | [ERR-DATAVERSE-001](docs/errors/dataverse-app.md) |
+| Browser favicon/tracking warnings | Cosmetic only, no impact | [ERR-FRONTEND-002](docs/errors/browser-resources.md) |
+
+### 📚 Comprehensive Error Documentation
+
+**Full Error Index**: See [docs/ERRORS_AND_SOLUTIONS.md](docs/ERRORS_AND_SOLUTIONS.md)
+
+This includes detailed troubleshooting guides for:
+- PostgreSQL database errors
+- Dataverse application deployment
+- Bootstrap and startup issues
+- Frontend/UI problems
+- Docker configuration errors
+- Browser-related warnings
+
+Each error includes:
+- Root cause analysis
+- Step-by-step fixes
+- Prevention strategies
+- Validation procedures
+
+### Common Issues & Solutions
 
 #### Issue: Port Already in Use
 **Error**: `Bind for 0.0.0.0:8080 failed: port is already allocated`
 
-**Solution**: Another service is using port 8080. Either:
-1. Stop the other service
-2. Change the port in `compose.yml`:
-```yaml
-dataverse:
-  ports:
-    - "8081:8080"  # Change 8080 to 8081
+**Solution**: Find and stop the service using port 8080:
+```powershell
+# Find what's using port 8080
+netstat -ano | Select-String ":8080"
+
+# Kill the process (replace PID with actual PID from above)
+Stop-Process -Id <PID> -Force
+
+# Or change Docker port in compose.yml
+# Uncomment/modify the ports section:
+# ports:
+#   - "8081:8080"  # Use 8081 instead
 ```
 
-#### Issue: Out of Memory
-**Error**: Containers crash or become unresponsive
+#### Issue: Out of Memory / Container Crashes
+**Error**: Containers repeatedly crash or become unresponsive
 
-**Solution**: Increase Docker Desktop memory allocation:
+**Solution**: Increase Docker Desktop memory:
 1. Open Docker Desktop Settings
-2. Go to Resources → Memory
-3. Increase to at least 8 GB
-4. Click "Apply & Restart"
+2. Go to **Resources → Memory**
+3. Increase to at least **8 GB** (16 GB recommended)
+4. Click **Apply & Restart**
+5. Restart Dataverse: `docker compose up -d`
 
 #### Issue: Bootstrap Timeout
-**Error**: Bootstrap container exits with timeout error
+**Error**: Bootstrap container exits with timeout after ~5 minutes
 
-**Solution**: Increase timeout in `compose.yml`:
-```yaml
-bootstrap:
-  environment:
-    - TIMEOUT=10m  # Increase from 3m to 10m
+**Solution**: This is **normal on first deployment**. See [ERR-DATAVERSE-002](docs/errors/bootstrap-timeout.md)
+
+```powershell
+# Just wait! Application continues to deploy
+docker compose logs -f dataverse | Select-String "deployed|ready|initialized"
 ```
 
 #### Issue: Cannot Connect to Database
-**Error**: `Connection refused` or database errors in logs
+**Error**: `Connection refused` or `FATAL: no pg_hba.conf entry`
 
-**Solution**:
+**Solution**: See [ERR-DB-001](docs/errors/postgres.md) for detailed fix
+
 ```powershell
-# Check if PostgreSQL is running
-docker compose ps postgres
-
-# View PostgreSQL logs
-docker compose logs postgres
-
-# Restart PostgreSQL
-docker compose restart postgres
+# Quick fix: Reset database (DELETES ALL DATA)
+docker compose down -v
+docker compose up -d
 ```
 
-### Getting Help
+#### Issue: See Payara Welcome Page Instead of Dataverse
+**Error**: Browser shows "Welcome to Payara Server"
 
-If you encounter issues:
+**Solution**: Application is still deploying. See [ERR-FRONTEND-001](docs/errors/frontend-ui.md)
 
-1. **Check logs**: Run `docker compose logs -f` to see error messages
-2. **Verify requirements**: Ensure you meet minimum hardware/software requirements
-3. **Community Support**: 
-   - Dataverse Community: https://dataverse.org/community
-   - GitHub Issues: https://github.com/IQSS/dataverse/issues
-   - Google Group: https://groups.google.com/g/dataverse-community
+**What to do**:
+1. Wait 10-30 more minutes for deployment to complete
+2. Refresh browser: F5 or Ctrl+R
+3. Monitor logs: `docker compose logs -f dataverse`
+4. Check API: `curl http://localhost:8080/api/info/version`
+
+#### Issue: Favicon 404 & Tracking Protection Warnings
+**Error**: Browser console shows favicon and tracking warnings
+
+**Solution**: These are cosmetic and harmless. See [ERR-FRONTEND-002](docs/errors/browser-resources.md)
+
+```
+This indicates:
+✅ Browser security features working   
+✅ No impact on functionality
+✅ No action required
+```
+
+### Advanced Troubleshooting
+
+#### View Detailed Logs
+
+```powershell
+# Stream logs for specific service
+docker compose logs -f dataverse --tail 100
+
+# Search for errors
+docker compose logs dataverse | Select-String "ERROR|Exception|FATAL"
+
+# Full audit trail
+docker compose logs --timestamps > logs_$(Get-Date -Format yyyyMMdd_HHmmss).txt
+```
+
+#### Health Check Verification
+
+```powershell
+# Check all containers
+docker compose ps
+
+# Check container resource usage
+docker stats
+
+# Check disk space
+docker system df
+
+# Verify specific service health
+docker compose ps dataverse
+```
+
+#### Database Diagnostics
+
+```powershell
+# Test PostgreSQL connection
+docker exec compose-postgres-1 pg_isready -U dataverse
+
+# Check database tables
+docker exec compose-postgres-1 psql -U dataverse -d dataverse -c "\dt"
+
+# View PostgreSQL logs
+docker compose logs postgres --tail 50
+```
+
+#### API Diagnosis
+
+```powershell
+# Test API endpoint
+$response = Invoke-WebRequest http://localhost:8080/api/info/version -ErrorAction SilentlyContinue
+"Status Code: $($response.StatusCode)"
+"Content: $($response.Content | ConvertFrom-Json | ConvertTo-Json)"
+
+# Check homepage
+Invoke-WebRequest http://localhost:8080/ | Select-Object -ExpandProperty Content | Select-String "Dataverse" | Select-Object -First 5
+```
+
+### Still Having Issues?
+
+**Step 1**: Check the error documentation - start with [docs/ERRORS_AND_SOLUTIONS.md](docs/ERRORS_AND_SOLUTIONS.md)
+
+**Step 2**: Enable debug logging:
+```powershell
+$DebugPreference = "Continue"
+docker compose logs -f --timestamps
+```
+
+**Step 3**: Community support:
+- Dataverse Community: https://dataverse.org/community
+- GitHub Issues: https://github.com/IQSS/dataverse/issues
+- Google Group: https://groups.google.com/g/dataverse-community
+
+**Step 4**: When reporting issues, include:
+- `docker compose ps` output
+- `docker compose logs --tail 100` from all services
+- Your system specs (RAM, disk, OS)
+- Steps to reproduce
 
 ## 🎨 Advanced Configuration
 

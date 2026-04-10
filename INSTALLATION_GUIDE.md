@@ -2,7 +2,15 @@
 
 A step-by-step guide to deploy and configure Dataverse using Docker containers.
 
-## 📋 Implementation Checklist
+## � Current Deployment Status
+
+✅ **Deployment Status**: See [DEPLOYMENT_STATUS.md](../DEPLOYMENT_STATUS.md) for current system status  
+🐛 **Known Issues**: See [docs/ERRORS_AND_SOLUTIONS.md](../docs/ERRORS_AND_SOLUTIONS.md) for troubleshooting  
+📚 **Quick Ref**: All commands and solutions are indexed in documentation
+
+---
+
+## �📋 Implementation Checklist
 
 - [ ] Verify system requirements
 - [ ] Install Docker and Docker Compose
@@ -424,77 +432,269 @@ docker compose up -d
 docker compose logs -f bootstrap
 ```
 
-## 🛠️ Phase 7: Troubleshooting
+## 🛠️ Phase 7: Troubleshooting & Error Resolution
+
+### 📚 Comprehensive Error Documentation
+
+All known errors and their solutions are documented in: **[docs/ERRORS_AND_SOLUTIONS.md](../docs/ERRORS_AND_SOLUTIONS.md)**
+
+| Error ID | Issue | Documentation |
+|----------|-------|-----------------|
+| ERR-DB-001 | PostgreSQL auth errors | [postgres.md](../docs/errors/postgres.md) |
+| ERR-DATAVERSE-001 | Application deployment failure | [dataverse-app.md](../docs/errors/dataverse-app.md) |
+| ERR-DATAVERSE-002 | Bootstrap timeout | [bootstrap-timeout.md](../docs/errors/bootstrap-timeout.md) |
+| ERR-FRONTEND-001 | Payara page instead of Dataverse | [frontend-ui.md](../docs/errors/frontend-ui.md) |
+| ERR-FRONTEND-002 | Browser favicon/tracking warnings | [browser-resources.md](../docs/errors/browser-resources.md) |
+| ERR-COMPOSE-001/002 | Docker configuration issues | [docker-compose.md](../docs/errors/docker-compose.md) |
+
+**Recommended**: Check the comprehensive error index first before troubleshooting.
+
+### Quick Diagnostic Tool
+
+```powershell
+# Run full system health check
+Write-Host "🔍 Dataverse System Diagnostics" -ForegroundColor Cyan
+Write-Host "================================" -ForegroundColor Cyan
+
+# 1. Container Status
+Write-Host "`n1️⃣  Container Status:"
+$containers = docker-compose -f compose.yml ps --format json | ConvertFrom-Json
+foreach ($container in $containers) {
+    if ($container.Status -match "Up") {
+        Write-Host "✅ $($container.Names): Running"
+    } else {
+        Write-Host "❌ $($container.Names): $($container.Status)"
+    }
+}
+
+# 2. API Health
+Write-Host "`n2️⃣  Dataverse API:"
+try {
+    $api = Invoke-RestMethod http://localhost:8080/api/info/version -TimeoutSec 5 -ErrorAction Stop
+    Write-Host "✅ API Responding (v$($api.data.version))"
+} catch {
+    Write-Host "❌ API Not Responding"
+}
+
+# 3. Database
+Write-Host "`n3️⃣  PostgreSQL Database:"
+try {
+    docker exec compose-postgres-1 pg_isready -U dataverse > $null 2>&1
+    Write-Host "✅ Database Healthy"
+} catch {
+    Write-Host "❌ Database Unavailable"
+}
+
+# 4. Search
+Write-Host "`n4️⃣  Solr Search:"
+try {
+    $solr = Invoke-WebRequest http://localhost:8983/solr/admin/ping -TimeoutSec 5 -ErrorAction Stop
+    if ($solr.StatusCode -eq 200) { Write-Host "✅ Solr Healthy" }
+} catch {
+    Write-Host "❌ Solr Unavailable"
+}
+```
 
 ### Common Issues & Solutions
 
-#### Issue: Bootstrap Takes Too Long
+#### Issue: See Payara Welcome Page Instead of Dataverse
 
-**Symptom:** Bootstrap runs for >15 minutes
+**Reference:** [ERR-FRONTEND-001](../docs/errors/frontend-ui.md)
 
 **Solution:**
-1. Check bootstrap logs: `docker compose logs bootstrap`
-2. Increase timeout in compose.yml:
-```yaml
-bootstrap:
-  environment:
-    - TIMEOUT=10m
+```powershell
+# Application is still deploying. Wait 10-30 minutes on first run.
+
+# Monitor deployment progress:
+docker-compose -f compose.yml logs -f dataverse | Select-String "deployed|ready" -Context 1
+
+# Check API when ready:
+Invoke-RestMethod http://localhost:8080/api/info/version
 ```
-3. Restart: `docker compose restart bootstrap`
 
-#### Issue: Cannot Access Web Interface
+#### Issue: Database Connection Refused
 
-**Symptom:** Browser shows "Connection refused" at localhost:8080
+**Reference:** [ERR-DB-001](../docs/errors/postgres.md)
+
+**Solution:**
+```powershell
+# Quick fix (WARNING: deletes all data):
+docker-compose -f compose.yml down -v
+docker-compose -f compose.yml up -d
+
+# Or preserve data - see ERR-DB-001 for detailed recovery steps
+```
+
+#### Issue: Bootstrap Timeout
+
+**Reference:** [ERR-DATAVERSE-002](../docs/errors/bootstrap-timeout.md)
+
+**Solution:**
+```powershell
+# This is NORMAL on first deployment. Bootstrap timeout does NOT mean failure.
+# Application continues deploying in background.
+
+# Just wait and check periodically:
+docker-compose -f compose.yml logs dataverse | tail -20
+```
+
+#### Issue: Cannot Access localhost:8080
+
+**Symptom:** Browser shows "Connection refused"
 
 **Checklist:**
 ```powershell
-# 1. Check if dataverse container is running
+# 1. Check if container is running
 docker compose ps dataverse
 
-# 2. Check if port is exposed
-docker compose port dataverse 8080
-
-# 3. Check dataverse logs
-docker compose logs dataverse | Select-String -Pattern "ERROR"
-
-# 4. Check if port is in use by another application
+# 2. Check if port 8080 is actually open
 netstat -ano | Select-String ":8080"
+
+# 3. Check for errors in dataverse logs
+docker compose logs dataverse | Select-String "ERROR|Exception|crash" -Context 2
+
+# 4. If port in use elsewhere, free it or use different port in compose.yml
 ```
 
-#### Issue: Database Connection Errors
+#### Issue: Out of Memory / Container Crashes
 
-**Symptom:** Dataverse logs show database connection errors
+**Solution:**
+1. Stop Dataverse: `docker compose down`
+2. Increase Docker Desktop memory:
+   - Open Docker Desktop → Settings → Resources
+   - Set Memory to 8-16 GB
+   - Apply & Restart
+3. Start again: `docker compose up -d`
+
+#### Issue: Out of Disk Space
 
 **Solution:**
 ```powershell
-# 1. Verify PostgreSQL is healthy
-docker compose ps postgres
+# Check disk usage
+docker system df
 
-# 2. Check PostgreSQL logs
-docker compose logs postgres
+# Clean up unused Docker resources
+docker system prune -a
 
-# 3. Test database connection
-docker compose exec postgres psql -U dataverse -d dataverse -c "SELECT version();"
-
-# 4. Restart database
-docker compose restart postgres
+# Move data directory to larger disk if needed
+# (See Phase 6 backup/restore procedures)
 ```
 
-#### Issue: Search Not Working
+### Viewing and Interpreting Logs
 
-**Symptom:** Search returns no results or errors
+#### Real-Time Monitoring
 
-**Solution:**
 ```powershell
-# 1. Check Solr health
-curl http://localhost:8983/solr/admin/cores?action=STATUS
+# Follow all logs
+docker compose -f compose.yml logs -f
 
-# 2. Reindex all content
-curl http://localhost:8080/api/admin/index
+# Follow specific service
+docker compose -f compose.yml logs -f dataverse
 
-# 3. Restart Solr
-docker compose restart solr
+# Last 100 lines
+docker compose -f compose.yml logs --tail 100 dataverse
+
+# With timestamps
+docker compose -f compose.yml logs --timestamps --tail 50
 ```
+
+#### Search for Specific Errors
+
+```powershell
+# Find ERROR messages
+docker compose logs | Select-String "ERROR"
+
+# Find database connection errors
+docker compose logs | Select-String "connect|connection|refused" -Context 2
+
+# Find deployment status
+docker compose logs dataverse | Select-String "deployment|deploy"
+```
+
+#### Export Logs for Analysis
+
+```powershell
+# Save all logs to file
+docker compose logs > dataverse_logs_$(Get-Date -Format yyyyMMdd_HHmmss).txt
+
+# Just dataverse container
+docker compose logs dataverse > dataverse_container.txt
+
+# Share with support (before redacting sensitive data!)
+```
+
+### Advanced Diagnostics
+
+#### Check Docker Version Compatibility
+
+```powershell
+docker --version
+docker compose version
+
+# Should show:
+# Docker version 20.x or later
+# Docker Compose version 2.x or later
+```
+
+#### Inspect Container Details
+
+```powershell
+# Get container ID
+$container_id = docker ps --format "{{.ID}}" -f "name=compose-dataverse"
+
+# View container details
+docker inspect $container_id
+
+# Check resource limits
+docker inspect $container_id | Select-String -Pattern "Memory|CpuShares"
+```
+
+#### Manual Database Testing
+
+```powershell
+# Connect directly to database
+docker exec -it compose-postgres-1 psql -U dataverse -d dataverse
+
+# Once connected (psql prompt), try:
+# SELECT COUNT(*) FROM dvobject;  -- Count objects
+# SELECT version();               -- Check version
+# \dt                             -- List tables
+# \q                              -- Quit
+```
+
+### When to Check Error Documentation
+
+**Check [docs/ERRORS_AND_SOLUTIONS.md](../docs/ERRORS_AND_SOLUTIONS.md) if you see:**
+- ❌ Application won't start
+- ❌ Database connection errors
+- ❌ Bootstrap failures
+- ❌ API returning errors
+- ❌ UI not showing correctly
+- ❌ Any persistent issues after basic troubleshooting
+
+### Getting Help
+
+**Before contacting support, gather:**
+
+```powershell
+# System information
+Write-Host "Operating System: $(Get-ComputerInfo -Property OsName | Select -ExpandProperty OsName)"
+Write-Host "Docker Version: $(docker --version)"
+Write-Host "Available Memory: $(Get-WmiObject -Class win32_operatingsystem | Select -ExpandProperty TotalVisibleMemorySize)"
+
+# Container status
+docker compose ps > container_status.txt
+
+# Recent logs (last 200 lines from each service)
+docker compose logs --tail 200 dataverse > logs_dataverse.txt
+docker compose logs --tail 200 postgres > logs_postgres.txt
+docker compose logs --tail 200 solr > logs_solr.txt
+
+# Error summary
+docker compose logs dataverse | Select-String "ERROR|Exception" | Out-File errors_summary.txt
+```
+
+Then share these files (with sensitive data redacted) with support team.
 
 ## 📚 Phase 8: Advanced Features
 
