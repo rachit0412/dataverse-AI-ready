@@ -8,10 +8,15 @@ For detailed error information, see file-specific error ledgers in `docs/errors/
 
 ## 📋 Error Index
 
-| Error ID | File/Component | Short Name | Status | Last Updated |
-|----------|----------------|------------|--------|--------------|
-| _No errors logged yet_ | - | - | - | - |
-
+| Error ID | File/Component | Short Name | Status | Documentation | Last Updated |
+|----------|----------------|------------|--------|-----------------|--------------|
+| [ERR-COMPOSE-001](errors/docker-compose.md#err-compose-001) | Docker Compose | Bind mount volume networking failure | Resolved | [Full Details](errors/docker-compose.md) | 2026-04-10 |
+| [ERR-COMPOSE-002](errors/docker-compose.md#err-compose-002) | Configuration | Incorrect environment variable names | Resolved | [Full Details](errors/docker-compose.md) | 2026-04-10 |
+| [ERR-DB-001](errors/postgres.md#err-db-001) | PostgreSQL | pg_hba.conf authentication error on restart | Resolved | [Full Details](errors/postgres.md) | 2026-04-10 |
+| [ERR-DATAVERSE-001](errors/dataverse-app.md#err-dataverse-001) | Dataverse App | Application fails to deploy - database connection refused | Resolved | [Full Details](errors/dataverse-app.md) | 2026-04-10 |
+| [ERR-DATAVERSE-002](errors/bootstrap-timeout.md#err-dataverse-002) | Bootstrap | Bootstrap timeout waiting for API response | Resolved | [Full Details](errors/bootstrap-timeout.md) | 2026-04-10 |
+| [ERR-FRONTEND-001](errors/frontend-ui.md#err-frontend-001) | UI/Frontend | Payara admin page showing instead of Dataverse UI | Resolved | [Full Details](errors/frontend-ui.md) | 2026-04-10 |
+| [ERR-FRONTEND-002](errors/browser-resources.md#err-frontend-002) | Browser | Favicon 404 and tracking protection warnings | Cosmetic | [Full Details](errors/browser-resources.md) | 2026-04-10 |
 ---
 
 ## Error Ledger Structure
