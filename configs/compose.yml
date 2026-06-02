@@ -1,117 +1,204 @@
-# Dataverse Production Docker Compose Configuration
+# =============================================================================
+# Dataverse Enterprise Docker Compose Configuration
+# =============================================================================
 # Based on: https://github.com/IQSS/dataverse/blob/develop/docker/compose/demo/compose.yml
-# Mode: Demo (moderate security - admin APIs require unblock key)
-# For local development/staging - NOT internet-facing production
+# Mode: Dev/Demo (configurable via BOOTSTRAP_MODE env var)
+# Includes: Solr auto-initialization, resource limits, security hardening
+# =============================================================================
 
 services:
+  # ---------------------------------------------------------------------------
   # PostgreSQL Database - Metadata storage
+  # ---------------------------------------------------------------------------
   postgres:
     container_name: postgres
     hostname: postgres
     image: postgres:${POSTGRES_VERSION:-13}
     restart: unless-stopped
-    
+
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-dataverse}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
       - POSTGRES_DB=${POSTGRES_DB:-dataverse}
-    
+      # Harden: disable trust auth for local connections
+      - POSTGRES_HOST_AUTH_METHOD=scram-sha-256
+      - POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256
+
     volumes:
       - postgres-data:/var/lib/postgresql/data
-    
+
     networks:
       - dataverse
-    
+
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1.0"
+        reservations:
+          memory: 256m
+
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dataverse}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dataverse} -d ${POSTGRES_DB:-dataverse}"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s
-    
+
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run/postgresql
+
     logging:
       driver: json-file
       options:
         max-size: "10m"
-        max-file: "3"
+        max-file: "5"
 
+  # ---------------------------------------------------------------------------
   # Apache Solr - Search engine
+  # ---------------------------------------------------------------------------
   solr:
     container_name: solr
     hostname: solr
     image: solr:${SOLR_VERSION:-9.3.0}
     restart: unless-stopped
-    
+
     volumes:
       - solr-data:/var/solr
-    
+
     networks:
       - dataverse
-    
+
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1.0"
+        reservations:
+          memory: 256m
+
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8983/solr/admin/cores?action=STATUS || exit 1"]
-      interval: 30s
+      test: >-
+        curl -sf http://localhost:8983/solr/collection1/admin/ping | grep -q '"status":"OK"'
+        || curl -sf http://localhost:8983/solr/admin/cores?action=STATUS | grep -q '"status":0'
+        || exit 1
+      interval: 15s
       timeout: 10s
-      retries: 3
+      retries: 5
       start_period: 60s
-    
+
     logging:
       driver: json-file
       options:
         max-size: "10m"
-        max-file: "3"
+        max-file: "5"
 
-  # SMTP Server - Email notifications (dev/demo)
-  smtp:
-    container_name: smtp
-    hostname: smtp
-    image: maildev/maildev:${MAILDEV_VERSION:-latest}
-    restart: unless-stopped
-    
-    ports:
-      - "8025:1080"  # Web UI for viewing test emails
-    
+  # ---------------------------------------------------------------------------
+  # Solr Initializer - Ensures collection1 with Dataverse schema
+  # Runs on every startup; exits 0 if core already healthy.
+  # THIS FIXES: Payara-instead-of-Dataverse issue after Docker restart.
+  # ---------------------------------------------------------------------------
+  solr-init:
+    container_name: solr-init
+    hostname: solr-init
+    build:
+      context: ./solr-init
+      dockerfile: Dockerfile
+    restart: "no"
+
+    environment:
+      - SOLR_HOST=solr
+      - SOLR_PORT=8983
+      - SOLR_INIT_TIMEOUT=${SOLR_INIT_TIMEOUT:-120}
+
     networks:
       - dataverse
-    
+
+    depends_on:
+      solr:
+        condition: service_healthy
+
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: "0.5"
+
     logging:
       driver: json-file
       options:
         max-size: "5m"
         max-file: "2"
 
-  # Dataverse Application - Main web application
+  # ---------------------------------------------------------------------------
+  # SMTP Server - Email notifications (dev/demo only)
+  # ---------------------------------------------------------------------------
+  smtp:
+    container_name: smtp
+    hostname: smtp
+    image: maildev/maildev:${MAILDEV_VERSION:-latest}
+    restart: unless-stopped
+
+    ports:
+      - "${SMTP_PORT:-8025}:1080"  # Web UI for viewing test emails
+
+    networks:
+      - dataverse
+
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+          cpus: "0.25"
+
+    profiles:
+      - dev
+      - demo
+      - default
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  # ---------------------------------------------------------------------------
+  # Dataverse Application - Main web application (Payara + WAR)
+  # ---------------------------------------------------------------------------
   dataverse:
     container_name: dataverse
     hostname: dataverse
     image: gdcc/dataverse:${DATAVERSE_VERSION:-latest}
     restart: unless-stopped
-    
+
     ports:
       - "${DATAVERSE_PORT:-8080}:8080"
-    
+
     environment:
       # Database connection (MicroProfile Config format)
-      # See: https://guides.dataverse.org/en/latest/installation/config.html
       - DATAVERSE_DB_HOST=postgres
       - DATAVERSE_DB_USER=${POSTGRES_USER:-dataverse}
       - DATAVERSE_DB_PASSWORD=${POSTGRES_PASSWORD:-changeme}
-      # Note: DB port 5432 and name 'dataverse' are defaults
-      
-      # Search engine (Solr)
+
+      # Search engine
       - SOLR_HOST=solr
       - SOLR_PORT=8983
-      
+
       # Email server
       - DATAVERSE_MAIL_MTA_HOST=smtp
       - DATAVERSE_MAIL_MTA_PORT=1025
-      
+
       # Application URL
       - DATAVERSE_SITEURL=${DATAVERSE_URL:-http://localhost:8080}
-      
+
       # JVM tuning and required configuration
-      # Based on: https://github.com/IQSS/dataverse/blob/develop/docker/compose/demo/compose.yml
-      - JVM_ARGS=-Xmx2g -Xms1g
+      - JVM_ARGS=-Xmx${JVM_MAX_HEAP:-2g} -Xms${JVM_MIN_HEAP:-1g}
+        -XX:+UseG1GC
+        -XX:MaxGCPauseMillis=200
         -Ddataverse.files.storage-driver-id=file1
         -Ddataverse.files.file1.type=file
         -Ddataverse.files.file1.label=Filesystem
@@ -122,69 +209,90 @@ services:
         -Ddataverse.pid.perma1.label=Perma1
         -Ddataverse.pid.perma1.authority=DV
         -Ddataverse.pid.perma1.permalink.separator=/
-    
+
     volumes:
       - dataverse-data:/dv
-    
+
     networks:
       - dataverse
-    
+
     depends_on:
       postgres:
         condition: service_healthy
       solr:
         condition: service_healthy
-    
+      solr-init:
+        condition: service_completed_successfully
+
+    deploy:
+      resources:
+        limits:
+          memory: ${DATAVERSE_MEM_LIMIT:-3g}
+          cpus: "2.0"
+        reservations:
+          memory: 1g
+
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8080/api/info/version || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 5
+      retries: 10
       start_period: 180s
-    
+
     logging:
       driver: json-file
       options:
         max-size: "20m"
         max-file: "5"
 
+  # ---------------------------------------------------------------------------
   # Bootstrap - Initial configuration (runs once, then exits)
+  # ---------------------------------------------------------------------------
   bootstrap:
     container_name: bootstrap
     image: gdcc/configbaker:${CONFIGBAKER_VERSION:-latest}
     restart: "no"
-    
+
     environment:
-      - TIMEOUT=${BOOTSTRAP_TIMEOUT:-5m}
-    
+      - TIMEOUT=${BOOTSTRAP_TIMEOUT:-10m}
+
     command:
       - bootstrap.sh
-      - dev  # Change to 'demo' for demo mode (see configs/demo/init.sh)
-    
-    # Uncomment for demo mode:
-    # volumes:
-    #   - ./configs/demo:/scripts/bootstrap/demo
-    
+      - ${BOOTSTRAP_MODE:-dev}
+
     networks:
       - dataverse
-    
+
     depends_on:
-      - dataverse
-    
+      dataverse:
+        condition: service_healthy
+
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: "0.5"
+
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "2"
 
+# =============================================================================
 # Named volumes for data persistence
-# Using named volumes (managed by Docker) instead of bind mounts for better compatibility
+# =============================================================================
 volumes:
   postgres-data:
+    name: dataverse-postgres-data
   solr-data:
+    name: dataverse-solr-data
   dataverse-data:
+    name: dataverse-app-data
 
+# =============================================================================
 # Internal network - isolates services
+# =============================================================================
 networks:
   dataverse:
     driver: bridge

@@ -195,7 +195,7 @@ function Restore-Files {
     
     try {
         # Get volume name
-        $volumeName = "configs_dataverse-data"
+        $volumeName = "dataverse-app-data"
         
         Write-Log "Restoring files to Docker volume..."
         

@@ -168,7 +168,7 @@ function Backup-Files {
     
     try {
         # Get volume name for dataverse data
-        $volumeName = "configs_dataverse-data"
+        $volumeName = "dataverse-app-data"
         
         # Create temp container to copy files from volume
         Write-Log "Copying files from Docker volume..."
