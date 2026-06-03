@@ -53,6 +53,26 @@ Contains comprehensive troubleshooting for all known problems:
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | Daily operations, backups, updates | Operations team |
 | [docs/SECURITY.md](docs/SECURITY.md) | Security guidelines & hardening | Production deployments |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System architecture & design | Developers |
+| [CHANGELOG.md](CHANGELOG.md) | Version history & changes | Release tracking |
+
+### Testing Documentation
+
+| Document | Purpose | Best For |
+|----------|---------|----------|
+| [TESTING_SUMMARY.md](TESTING_SUMMARY.md) | Executive overview, 3 quick-start paths | Getting oriented |
+| [TESTING_WORKFLOW_GUIDE.md](TESTING_WORKFLOW_GUIDE.md) | Complete testing runbook (unit, integration, coverage) | Deep testing |
+| [TESTING_QUICK_REFERENCE.md](TESTING_QUICK_REFERENCE.md) | Cheat sheet, 3-minute start, command reference | Day-to-day testing |
+| [SMOKE_TEST_SETUP.md](SMOKE_TEST_SETUP.md) | Environment verification & smoke tests | Pre-test setup |
+| [INTEGRATION_TEST_RUNNER.ps1](INTEGRATION_TEST_RUNNER.ps1) | 8 REST API integration tests | Automated validation |
+
+### Scripts
+
+| Script | Purpose |
+|--------|---------|
+| [scripts/start.ps1](scripts/start.ps1) | Enterprise startup: build, start, wait, verify, open browser |
+| [scripts/healthcheck.ps1](scripts/healthcheck.ps1) | System health check (containers, API, DB, Solr, disk, memory) |
+| [scripts/backup.ps1](scripts/backup.ps1) | Automated backup with retention and compression |
+| [scripts/restore.ps1](scripts/restore.ps1) | Restore from backup with validation |
 
 ### Error & Resolution Documentation
 
@@ -73,10 +93,10 @@ Contains comprehensive troubleshooting for all known problems:
 ### Installation & Deployment
 
 **Fast Track:**
-```bash
-cd configs/
-docker-compose up -d
-# Wait 20-60 minutes for first deployment
+```powershell
+# From the repository root:
+.\scripts\start.ps1
+# Wait for readiness (auto-detected)
 # Access: http://localhost:8080/
 # Login: dataverseAdmin / admin1
 ```
@@ -87,25 +107,27 @@ See [INSTALLATION_GUIDE.md](INSTALLATION_GUIDE.md) - 8 detailed phases
 ### Day-to-Day Operations
 
 **Start Dataverse:**
-```bash
-cd configs/
-docker-compose up -d
+```powershell
+.\scripts\start.ps1
+# Or manually:
+docker compose -f configs\compose.yml up -d
 ```
 
 **Stop Dataverse:**
-```bash
-cd configs/
-docker-compose down
+```powershell
+docker compose -f configs\compose.yml down
 ```
 
 **View Logs:**
-```bash
-docker-compose logs -f dataverse
+```powershell
+docker compose -f configs\compose.yml logs -f dataverse
 ```
 
 **Backup Database:**
-```bash
-docker exec compose-postgres-1 pg_dump -U dataverse dataverse > backup.sql
+```powershell
+.\scripts\backup.ps1
+# Or manually:
+docker exec postgres pg_dump -U dataverse dataverse > backup.sql
 ```
 
 See [docs/OPERATIONS.md](docs/OPERATIONS.md) for more operations
@@ -114,16 +136,19 @@ See [docs/OPERATIONS.md](docs/OPERATIONS.md) for more operations
 
 ```powershell
 # 1. Check containers are running
-docker-compose ps
+docker compose -f configs\compose.yml ps
 
 # 2. Check API is responding
-curl http://localhost:8080/api/info/version
+Invoke-RestMethod http://localhost:8080/api/info/version
 
 # 3. Check database
-docker exec compose-postgres-1 pg_isready -U dataverse
+docker exec postgres pg_isready -U dataverse
 
 # 4. View recent logs
-docker-compose logs dataverse --tail 50
+docker compose -f configs\compose.yml logs dataverse --tail 50
+
+# 5. Run integration tests
+.\INTEGRATION_TEST_RUNNER.ps1
 ```
 
 For detailed troubleshooting, see [INSTALLATION_GUIDE.md Phase 7](INSTALLATION_GUIDE.md#-phase-7-troubleshooting--error-resolution)
@@ -138,6 +163,27 @@ For detailed troubleshooting, see [INSTALLATION_GUIDE.md Phase 7](INSTALLATION_G
 ├── INSTALLATION_GUIDE.md              ← Installation procedure
 ├── DEPLOYMENT_STATUS.md               ← Current status
 ├── DOCUMENTATION_INDEX.md             ← You are here
+├── CHANGELOG.md                       ← Version history
+├── TESTING_SUMMARY.md                 ← Testing overview
+├── TESTING_WORKFLOW_GUIDE.md           ← Complete testing runbook
+├── TESTING_QUICK_REFERENCE.md          ← Testing cheat sheet
+├── SMOKE_TEST_SETUP.md                ← Smoke test setup
+├── INTEGRATION_TEST_RUNNER.ps1         ← Automated API tests
+│
+├── configs/
+│   ├── compose.yml                    ← Docker Compose config
+│   ├── README.md                      ← Config quick reference
+│   ├── demo/
+│   │   └── init.sh                    ← Demo mode init script
+│   └── solr-init/
+│       ├── Dockerfile                 ← Solr init image
+│       └── init-solr.sh               ← Solr collection setup
+│
+├── scripts/
+│   ├── start.ps1                      ← Enterprise startup
+│   ├── healthcheck.ps1                ← System health check
+│   ├── backup.ps1                     ← Automated backup
+│   └── restore.ps1                    ← Restore from backup
 │
 └── docs/
     ├── ERRORS_AND_SOLUTIONS.md        ← 🔴 ERROR INDEX
@@ -145,16 +191,19 @@ For detailed troubleshooting, see [INSTALLATION_GUIDE.md Phase 7](INSTALLATION_G
     ├── SECURITY.md                    ← Security guidelines
     ├── ARCHITECTURE.md                ← System architecture
     ├── CONTRIBUTING.md                ← Contributing guide
-    ├── CHANGELOG.md                   ← Version history
+    ├── EXECUTION_PLAN_LOCAL.md         ← Local deployment plan
+    │
+    ├── adr/
+    │   └── README.md                  ← ADR guide
     │
     └── errors/                        ← Detailed error documentation
         ├── postgres.md                ← ERR-DB-001
         ├── dataverse-app.md           ← ERR-DATAVERSE-001
         ├── bootstrap-timeout.md       ← ERR-DATAVERSE-002
+        ├── dataverse-bootstrap-deadlock.md ← ERR-COMPOSE-002
         ├── frontend-ui.md             ← ERR-FRONTEND-001
         ├── browser-resources.md       ← ERR-FRONTEND-002
-        ├── docker-compose.md          ← ERR-COMPOSE-001/002
-        └── [more error ledgers]
+        └── docker-compose.md          ← ERR-COMPOSE-001
 ```
 
 ---
@@ -200,8 +249,8 @@ Check the specific error ledger in `docs/errors/` folder
 ### Step 3: Gather Information
 Before contacting support, collect:
 ```bash
-docker-compose ps > status.txt
-docker-compose logs --tail 100 > logs.txt
+docker compose ps > status.txt
+docker compose logs --tail 100 > logs.txt
 ```
 
 ### Step 4: Community Support

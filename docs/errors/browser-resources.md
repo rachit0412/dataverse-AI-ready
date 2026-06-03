@@ -129,7 +129,7 @@ services:
 **Step 3:** Restart:
 
 ```powershell
-docker-compose -f compose.yml restart dataverse
+docker compose -f configs\compose.yml restart dataverse
 ```
 
 **Step 4:** Clear browser cache and reload:
@@ -202,7 +202,7 @@ $login = Invoke-WebRequest http://localhost:8080/dataverse/faces/login.xhtml
 if ($login.Content -match "Login") { Write-Host "✅ Login page accessible" }
 
 # 4. Verify database
-docker exec compose-postgres-1 psql -U dataverse -d dataverse -c "SELECT COUNT(*) FROM pg_tables" > $null 2>&1
+docker exec postgres psql -U dataverse -d dataverse -c "SELECT COUNT(*) FROM pg_tables" > $null 2>&1
 Write-Host "✅ Database healthy"
 
 # All systems: GO ✅

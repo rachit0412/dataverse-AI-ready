@@ -194,12 +194,12 @@ mvn -version
 curl http://localhost:8080/api/info/version
 ```
 - If returns version info → API works ✅
-- If connection refused → Check: `docker-compose ps` and `docker-compose up -d`
+- If connection refused → Check: `docker compose ps` and `docker compose up -d`
 
 **Q4: What if tests fail?**
 - Check: [TESTING_WORKFLOW_GUIDE.md](TESTING_WORKFLOW_GUIDE.md) → Section "If Things Go Wrong"
 - Most likely: wrong BaseURL or auth key not set
-- Nuclear option: `docker-compose down -v && docker-compose up -d`
+- Nuclear option: `docker compose down -v && docker compose up -d`
 
 ---
 
@@ -226,7 +226,7 @@ See also: DOCUMENTATION_INDEX.md (All docs in one place)
 
 ### Command 1: Check Deployment Health
 ```powershell
-docker-compose ps
+docker compose ps
 curl http://localhost:8080/api/info/version
 ```
 **When**: Before running any tests  
@@ -292,11 +292,11 @@ You'll know you're ready when:
 
 | Issue | Fix | Time |
 |-------|-----|------|
-| "Connection refused" | `docker-compose up -d` + wait 30s | 35s |
+| "Connection refused" | `docker compose up -d` + wait 30s | 35s |
 | "Command not found" (java/mvn) | `choco install openjdk maven` | 5min |
 | "401 Unauthorized" | `curl -X PUT -d "BurritoBep" http://localhost:8080/api/admin/settings/:BurritoBep` | 30s |
 | Tests timeout | Increase heap: `mvn -Xmx2g verify` | 30s |
-| Database error | Complete reset: `docker-compose down -v && docker-compose up -d` | 2min |
+| Database error | Complete reset: `docker compose down -v && docker compose up -d` | 2min |
 
 ---
 

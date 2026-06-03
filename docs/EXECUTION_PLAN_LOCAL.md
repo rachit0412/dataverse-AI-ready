@@ -141,18 +141,15 @@ DATAVERSE_URL=http://localhost:8080
 
 ### Data Persistence
 
-Per README.md:
-> "All data is stored in a `data` directory that Docker Compose creates automatically"
+Data is persisted using Docker named volumes (created automatically on first run):
 
-**Data Directory Contents:**
-- `data/postgres` - Database files
-- `data/solr` - Search index
-- `data/dataverse` - Uploaded files
-- `data/secrets` - Config secrets
+| Volume | Purpose |
+|--------|---------|
+| `dataverse-postgres-data` | PostgreSQL database files |
+| `dataverse-solr-data` | Solr search index |
+| `dataverse-app-data` | Uploaded files |
 
-**Behavior:** "Your data persists even when containers are stopped"
-
-**Note:** Documentation states Docker Compose creates this automatically; manual creation is optional.
+**Behavior:** Your data persists even when containers are stopped. Use `docker compose -f configs\compose.yml down -v` to remove volumes (WARNING: deletes data).
 
 ---
 

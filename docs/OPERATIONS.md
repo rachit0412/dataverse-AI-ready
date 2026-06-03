@@ -44,18 +44,19 @@ This document provides operational procedures for deploying, monitoring, maintai
 
 3. **Start Services**
    ```powershell
-   docker compose up -d
+   .\scripts\start.ps1
+   # Or: docker compose -f configs\compose.yml up -d
    ```
 
 4. **Monitor Bootstrap**
    ```powershell
-   docker compose logs -f bootstrap
+   docker compose -f configs\compose.yml logs -f bootstrap
    # Wait for "Successfully completed bootstrap" message
    ```
 
 5. **Verify Health**
    ```powershell
-   .\scripts\healthcheck.ps1
+   .\scripts\healthcheck.ps1 -Detailed
    ```
 
 6. **Access Web UI**
@@ -206,8 +207,8 @@ docker stats --no-stream
 
 **Disk Usage:**
 ```powershell
-# Check data directory size
-Get-ChildItem -Path data -Recurse | Measure-Object -Property Length -Sum
+# Check Docker volume sizes
+docker system df -v | Select-String "dataverse"
 
 # Check available space
 Get-PSDrive C | Select-Object Used,Free
@@ -240,9 +241,8 @@ Get-PSDrive C | Select-Object Used,Free
 
 **What Gets Backed Up:**
 - PostgreSQL database (via `pg_dump`)
-- Uploaded files (entire `data/dataverse/` directory)
+- Uploaded files (from Docker volume `dataverse-app-data`)
 - Configuration files (`.env`, `compose.yml`, `demo/`)
-- Secrets (encrypted)
 
 **Storage:**
 - Local: `backups/` directory
@@ -265,7 +265,7 @@ Get-PSDrive C | Select-Object Used,Free
 
 1. **Stop Services**
    ```powershell
-   docker compose down
+   docker compose -f configs\compose.yml down
    ```
 
 2. **Restore Database**
@@ -280,12 +280,13 @@ Get-PSDrive C | Select-Object Used,Free
 
 4. **Start Services**
    ```powershell
-   docker compose up -d
+   .\scripts\start.ps1
    ```
 
 5. **Verify Integrity**
    ```powershell
-   .\tests\smoke-test.ps1
+   .\scripts\healthcheck.ps1 -Detailed
+   .\INTEGRATION_TEST_RUNNER.ps1
    ```
 
 **Expected Duration:** 1-2 hours (depends on data size)
@@ -416,9 +417,9 @@ docker inspect <container_id>
 
 **Investigation:**
 ```powershell
-docker compose ps postgres  # Should be "Up (healthy)"
-docker compose logs postgres
-docker compose exec postgres psql -U dataverse -d dataverse -c "SELECT 1;"
+docker compose -f configs\compose.yml ps postgres  # Should be "Up (healthy)"
+docker compose -f configs\compose.yml logs postgres
+docker exec postgres psql -U dataverse -d dataverse -c "SELECT 1;"
 ```
 
 **Common Causes & Fixes:**
@@ -467,7 +468,10 @@ curl http://localhost:8983/solr/admin/cores?action=STATUS
      ```
 
 3. **Solr Core Missing**
-   - Fix: Recreate core (requires bootstrap)
+   - Fix: Recreate core (solr-init runs automatically on restart):
+     ```powershell
+     docker compose -f configs\compose.yml restart solr solr-init
+     ```
 
 **Escalation:** If reindexing fails, escalate to P2.
 
@@ -494,7 +498,7 @@ docker compose logs dataverse | Select-String "slow query"
 2. **Database Needs Vacuum**
    - Fix:
      ```powershell
-     docker compose exec postgres vacuumdb -U dataverse -d dataverse --analyze
+     docker exec postgres vacuumdb -U dataverse -d dataverse --analyze
      ```
 
 3. **Large Solr Index**
@@ -519,8 +523,8 @@ docker compose logs dataverse | Select-String "slow query"
 
 **Investigation:**
 ```powershell
-docker compose logs dataverse | Select-String "upload"
-Get-ChildItem -Path data\dataverse
+docker compose -f configs\compose.yml logs dataverse | Select-String "upload"
+docker exec dataverse ls /dv
 $disk = Get-PSDrive C
 $disk.Free / 1GB  # Check free space in GB
 ```
@@ -532,8 +536,8 @@ $disk.Free / 1GB  # Check free space in GB
    - Fix: Free up space or expand disk
 
 2. **Permissions Issue**
-   - Check: `icacls data\dataverse`
-   - Fix: Grant write permissions
+   - Check: `docker exec dataverse ls -la /dv`
+   - Fix: Verify volume mount permissions
 
 3. **File Too Large**
    - Check: Dataverse max file size setting

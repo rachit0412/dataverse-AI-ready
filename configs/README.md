@@ -8,18 +8,24 @@
 # Navigate to project directory
 cd path\to\dataverse-AI-ready
 
-# Create .env file from template
+# Create .env file from template (optional — defaults are provided in compose.yml)
 Copy-Item configs\.env.example .env
 
 # Edit .env and set strong password for POSTGRES_PASSWORD
 notepad .env
-
-# Create data directories
-New-Item -ItemType Directory -Force -Path data\postgres, data\solr, data\dataverse
 ```
+
+> **Note:** Data is stored in Docker named volumes (`dataverse-postgres-data`, `dataverse-solr-data`, `dataverse-app-data`), not in local directories.
 
 ### 2. Start Dataverse
 
+**Option A: Enterprise startup script** (recommended):
+```powershell
+.\scripts\start.ps1
+```
+This builds solr-init, starts all containers, waits for readiness, and opens the browser.
+
+**Option B: Manual:**
 ```powershell
 # Start in foreground (see logs)
 docker compose -f configs\compose.yml up
@@ -123,17 +129,11 @@ docker compose -f configs\compose.yml logs bootstrap
 **⚠️ WARNING: This deletes ALL data!**
 
 ```powershell
-# Stop and remove containers
-docker compose -f configs\compose.yml down
-
-# Delete data
-Remove-Item -Path data -Recurse -Force
-
-# Recreate data directories
-New-Item -ItemType Directory -Force -Path data\postgres, data\solr, data\dataverse
+# Stop and remove containers + volumes
+docker compose -f configs\compose.yml down -v
 
 # Start again
-docker compose -f configs\compose.yml up
+.\scripts\start.ps1
 ```
 
 ---
@@ -164,13 +164,14 @@ For deployments beyond localhost testing:
 ## Health Check
 
 ```powershell
-# All containers should show "Up (healthy)"
+# Automated health check (recommended)
+.\scripts\healthcheck.ps1 -Detailed
+
+# Or manually:
 docker compose -f configs\compose.yml ps
 
 # Test API endpoint
-curl http://localhost:8080/api/info/version
-
-# Expected: JSON response with version info
+Invoke-RestMethod http://localhost:8080/api/info/version
 ```
 
 ---
@@ -179,24 +180,33 @@ curl http://localhost:8080/api/info/version
 
 See `scripts\backup.ps1` for automated backup procedures.
 
-**Quick manual backup:**
+```powershell
+# Automated backup with retention
+.\scripts\backup.ps1
+
+# Quick manual database backup
+docker exec postgres pg_dump -U dataverse dataverse > backup_db.sql
+```
+
+---
+
+## Integration Tests
 
 ```powershell
-# Backup database
-docker compose -f configs\compose.yml exec postgres pg_dump -U dataverse dataverse > backup_db.sql
-
-# Backup files
-Copy-Item -Path data\dataverse -Destination backup_files -Recurse
+# Run 8 REST API integration tests
+.\INTEGRATION_TEST_RUNNER.ps1
 ```
 
 ---
 
 ## Documentation
 
-- **Full Installation Guide:** `docs/EXECUTION_PLAN_LOCAL.md`
-- **Architecture:** `docs/ARCHITECTURE.md`
-- **Security:** `docs/SECURITY.md`
-- **Operations:** `docs/OPERATIONS.md`
+- **Full Installation Guide:** [INSTALLATION_GUIDE.md](../INSTALLATION_GUIDE.md)
+- **Architecture:** [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md)
+- **Security:** [docs/SECURITY.md](../docs/SECURITY.md)
+- **Operations:** [docs/OPERATIONS.md](../docs/OPERATIONS.md)
+- **Testing:** [TESTING_QUICK_REFERENCE.md](../TESTING_QUICK_REFERENCE.md)
+- **Error Index:** [docs/ERRORS_AND_SOLUTIONS.md](../docs/ERRORS_AND_SOLUTIONS.md)
 
 ---
 

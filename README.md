@@ -2,7 +2,7 @@
 
 A complete Docker-based setup for running Dataverse, the open-source research data repository platform developed at Harvard's Institute for Quantitative Social Science.
 
-## � Status & Documentation
+## Status & Documentation
 
 | Item | Link | Description |
 |------|------|-------------|
@@ -12,6 +12,9 @@ A complete Docker-based setup for running Dataverse, the open-source research da
 | **Installation** | [INSTALLATION_GUIDE.md](INSTALLATION_GUIDE.md) | Step-by-step setup procedure |
 | **Operations** | [docs/OPERATIONS.md](docs/OPERATIONS.md) | Daily operations & maintenance |
 | **Security** | [docs/SECURITY.md](docs/SECURITY.md) | Security guidelines & best practices |
+| **Testing Summary** | [TESTING_SUMMARY.md](TESTING_SUMMARY.md) | Testing overview with quick-start paths |
+| **Testing Workflow** | [TESTING_WORKFLOW_GUIDE.md](TESTING_WORKFLOW_GUIDE.md) | Complete testing runbook |
+| **Quick Reference** | [TESTING_QUICK_REFERENCE.md](TESTING_QUICK_REFERENCE.md) | Testing cheat sheet |
 
 ---
 
@@ -59,27 +62,34 @@ docker compose version
 
 ## 🚀 Quick Start
 
-### Step 1: Download Docker Compose File
+### Step 1: Clone and Navigate
 
-Download the official compose file:
+This repository includes a production-ready `compose.yml` in `configs/` with Solr auto-initialization, resource limits, and security hardening.
+
 ```powershell
-Invoke-WebRequest -Uri "https://guides.dataverse.org/en/latest/_downloads/f08d721f1b85dd424dff557bf65fdc5c/compose.yml" -OutFile "compose.yml"
+git clone https://github.com/rachit0412/dataverse-AI-ready.git
+cd dataverse-AI-ready
 ```
-
-Or create it manually (see [compose.yml structure](#compose-yml-structure) below).
 
 ### Step 2: Start Dataverse
 
+**Option A — Enterprise startup script** (recommended):
 ```powershell
-docker compose up
+.\scripts\start.ps1
+```
+This builds the solr-init image, starts all containers, waits for readiness, and opens the browser.
+
+**Option B — Manual:**
+```powershell
+docker compose -f configs\compose.yml up -d
 ```
 
 **Expected Output:**
-- Multiple containers will be pulled and started
 - PostgreSQL database will initialize
 - Solr search engine will start
-- Bootstrap process will configure Dataverse (5-10 minutes on first run)
-- Look for success message from the bootstrap container
+- **solr-init** will create `collection1` with the Dataverse schema (automatic)
+- Dataverse WAR will deploy (10–30 minutes on first run)
+- Bootstrap process will configure Dataverse
 
 ### Step 3: Access Dataverse
 
@@ -183,34 +193,33 @@ docker compose ps
 
 ### Data Persistence
 
-All data is stored in a `data` directory that Docker Compose creates automatically:
-- **Database**: `data/postgres`
-- **Search Index**: `data/solr`  
-- **Uploaded Files**: `data/dataverse`
-- **Config**: `data/secrets`
+All data is stored in Docker named volumes (managed by Docker, not in the working directory):
+- **Database**: `dataverse-postgres-data`
+- **Search Index**: `dataverse-solr-data`
+- **Uploaded Files**: `dataverse-app-data`
 
 Your data persists even when containers are stopped.
+
+To inspect volumes:
+```powershell
+docker volume ls --filter name=dataverse
+```
 
 ### Starting Fresh
 
 To completely reset your Dataverse installation:
 
-1. Stop all containers:
+1. Stop all containers and remove volumes:
 ```powershell
-docker compose down
+docker compose -f configs\compose.yml down -v
 ```
 
-2. Delete the data directory:
+2. Start again:
 ```powershell
-Remove-Item -Path data -Recurse -Force
+.\scripts\start.ps1
 ```
 
-3. Start again:
-```powershell
-docker compose up
-```
-
-⚠️ **Warning**: This deletes ALL data including database, files, and configurations!
+⚠️ **Warning**: The `-v` flag deletes ALL data including database, files, and configurations!
 
 ## 🧪 Smoke Testing
 
@@ -224,7 +233,15 @@ After installation, verify these basic operations work:
 6. ✅ Publish the dataset
 7. ✅ Search for your dataset
 
+**Automated API tests:**
+```powershell
+.\INTEGRATION_TEST_RUNNER.ps1
+```
+Runs 8 REST API integration tests and reports a pass/fail summary.
+
 If all tests pass, your Dataverse installation is working correctly!
+
+See [TESTING_QUICK_REFERENCE.md](TESTING_QUICK_REFERENCE.md) for the full testing cheat sheet.
 
 ## 🔍 Troubleshooting & Support
 
@@ -364,10 +381,10 @@ docker compose ps dataverse
 
 ```powershell
 # Test PostgreSQL connection
-docker exec compose-postgres-1 pg_isready -U dataverse
+docker exec postgres pg_isready -U dataverse
 
 # Check database tables
-docker exec compose-postgres-1 psql -U dataverse -d dataverse -c "\dt"
+docker exec postgres psql -U dataverse -d dataverse -c "\dt"
 
 # View PostgreSQL logs
 docker compose logs postgres --tail 50

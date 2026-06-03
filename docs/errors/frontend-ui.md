@@ -230,7 +230,7 @@ HOW TO ACCESS:
 TROUBLESHOOTING:
    • See Payara page? → Still deploying, wait 30 seconds
    • Get 404 error? → Normal during startup
-   • Nothing loads? → Check: docker-compose ps
+   • Nothing loads? → Check: docker compose ps
 "@
 
 # Monitor deployment
@@ -263,12 +263,12 @@ Add this to the main README:
 ```markdown
 ## 🚀 First-Time Access
 
-After running `docker-compose up -d`:
+After running `docker compose up -d`:
 
 1. **Wait** - First deployment takes 20-60 minutes
 2. **Check** - Use this command to verify status:
    ```
-   docker-compose ps  # Should all show "Up"
+   docker compose ps  # Should all show "Up"
    ```
 3. **Access** - When ready, navigate to:
    - **http://localhost:8080/**
@@ -313,8 +313,8 @@ curl http://localhost:8080/api/info/version
 
 1. ✅ **DO**: Use port 8080 for everything
 2. ✅ **DO**: Wait at least 30 minutes before troubleshooting
-3. ✅ **DO**: Check deployment logs: `docker-compose logs dataverse | tail -50`
-4. ✅ **DO**: Monitor with: `docker-compose ps`
+3. ✅ **DO**: Check deployment logs: `docker compose logs dataverse | tail -50`
+4. ✅ **DO**: Monitor with: `docker compose ps`
 
 5. ❌ **DON'T**: Try to access port 4848 (Payara admin is blocked)
 6. ❌ **DON'T**: Panic if you see Payara page immediately - wait!
@@ -340,9 +340,9 @@ If user reports "I see Payara page":
    - < 10 min: "Please wait, deployment takes 20-60 minutes"
    - > 45 min: "Let me help troubleshoot"
 
-2. **Verify**: Run `docker-compose ps` - should show all "Up"
+2. **Verify**: Run `docker compose ps` - should show all "Up"
 
-3. **Check**: Run `docker-compose logs dataverse | tail -20`
+3. **Check**: Run `docker compose logs dataverse | tail -20`
    - Look for: "deployed successfully" or "ERROR"
 
 4. **Clarify**: "Make sure you're accessing port **8080**, not 4848"

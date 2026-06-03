@@ -53,10 +53,15 @@ This deployment provides:
     │PostgreSQL│ │  Solr   │ │    SMTP    │
     │Database  │ │ Search  │ │   Server   │
     │Port: 5432│ │Port:8983│ │  Port: 25  │
-    └──────────┘ └─────────┘ └────────────┘
-         │            │             │
-         ↓            ↓             ↓
-    [data/postgres] [data/solr] [Email Queue]
+    └──────────┘ └────┬────┘ └────────────┘
+         │          │             │
+         ↓          ↓             ↓
+    [Named Vol] ┌─────────┐ [Email Queue]
+                │Solr-Init│
+                │(init    │
+                │ runs at │
+                │ startup)│
+                └─────────┘
 ```
 
 ### Container Network
@@ -90,13 +95,13 @@ All containers communicate over an internal Docker network (`dataverse`) with no
 - Admin API protection (dev mode vs demo mode)
 
 **Persistent Data:**
-- Uploaded files: `/dv` volume mount → `data/dataverse/`
+- Uploaded files: `/dv` volume mount → Docker volume `dataverse-app-data`
 - Configuration: Database-backed (not files)
 
 **Health Check:**
 - HTTP GET `http://localhost:8080/api/info/version`
 - Expects JSON response with version number
-- Interval: 30s, Timeout: 10s, Retries: 3
+- Interval: 30s, Timeout: 10s, Retries: 10, Start Period: 180s
 
 ---
 
@@ -113,7 +118,7 @@ All containers communicate over an internal Docker network (`dataverse`) with no
 - ~200 tables (users, datasets, dataverses, files, permissions, etc.)
 
 **Persistent Data:**
-- Database files: `/var/lib/postgresql/data` → `data/postgres/`
+- Database files: `/var/lib/postgresql/data` → Docker volume `dataverse-postgres-data`
 
 **Backup Strategy:**
 - Daily `pg_dump` to external storage
@@ -135,15 +140,35 @@ All containers communicate over an internal Docker network (`dataverse`) with no
 - Support auto-suggest queries
 
 **Configuration:**
-- Core name: `collection1` (created by bootstrap)
-- Schema defined by Dataverse
+- Core name: `collection1` (created by **solr-init** service)
+- Schema defined by Dataverse (copied from `gdcc/configbaker`)
 
 **Persistent Data:**
-- Index files: `/var/solr` → `data/solr/`
+- Index files: `/var/solr` → Docker named volume `dataverse-solr-data`
 
 **Reindexing:**
 - Triggered via Dataverse admin API: `/api/admin/index`
 - Required after major version upgrades or index corruption
+
+---
+
+### 3a. Solr Initializer Container (solr-init)
+
+**Image:** Custom (built from `configs/solr-init/Dockerfile`)  
+**Base:** `solr:9.3.0` with Dataverse schema from `gdcc/configbaker:latest`  
+**Lifecycle:** Runs on every startup, exits 0 when `collection1` is healthy  
+**Responsibilities:**
+- Wait for Solr to be ready
+- Check if `collection1` already exists and is healthy (idempotent)
+- Create core with `_default` configSet if missing
+- Copy Dataverse `schema.xml` and language directory to core conf
+- Remove managed-schema files to prevent conflicts
+- Reload core and verify via ping
+
+**Why this exists:**
+- Fixes the "Payara page instead of Dataverse" issue after Docker restart
+- Ensures Solr always has the correct Dataverse schema before the app starts
+- Dataverse depends on `solr-init: service_completed_successfully`
 
 ---
 
@@ -204,32 +229,30 @@ All containers communicate over an internal Docker network (`dataverse`) with no
 
 ## Persistent Storage
 
-All data is stored in the `data/` directory with the following structure:
+All data is stored in Docker named volumes managed by Docker Engine:
 
-```
-data/
-├── postgres/       # PostgreSQL database files
-│   └── pg_data/    # Managed by Postgres container
-├── solr/           # Solr index files
-│   └── collection1/
-├── dataverse/      # Uploaded dataset files
-│   ├── files/
-│   └── temp/
-└── secrets/        # Secrets (passwords, keys)
-    └── unblock-key.txt
+| Volume Name | Mount Point | Contents |
+|-------------|-------------|----------|
+| `dataverse-postgres-data` | `/var/lib/postgresql/data` | PostgreSQL database files |
+| `dataverse-solr-data` | `/var/solr` | Solr search index |
+| `dataverse-app-data` | `/dv` | Uploaded dataset files |
+
+Inspect volumes:
+```powershell
+docker volume ls --filter name=dataverse
+docker volume inspect dataverse-postgres-data
 ```
 
 **Backup Considerations:**
-- **Database**: Use `pg_dump` for logical backups (recommended)
-- **Files**: Use filesystem-level backups (rsync, Restic, etc.)
+- **Database**: Use `pg_dump` for logical backups (recommended) — `scripts/backup.ps1`
+- **Files**: Use `scripts/backup.ps1` which extracts from Docker volumes
 - **Solr**: Can be rebuilt from database (reindexing), backup optional
-- **Secrets**: Must be backed up separately (not in git)
 
 **Restore Procedure:**
 1. Stop all containers
-2. Restore database from `pg_dump`
+2. Restore database from `pg_dump` — `scripts/restore.ps1`
 3. Restore file storage
-4. Start containers
+4. Start containers: `scripts/start.ps1`
 5. Reindex Solr if needed
 
 ---

@@ -1,11 +1,10 @@
-# 🚀 Dataverse Deployment Status - April 10-11, 2026
+# 🚀 Dataverse Deployment Status
 
 ## ✅ Deployment Completed Successfully
 
 **Status**: 🟢 **READY FOR USE** - All Services Healthy  
-**Deployment Completed**: 2026-04-10 ~21:50 UTC  
-**Total Duration**: ~45 minutes (first deployment)  
-**Container Status**: 5/5 Services Healthy ✅
+**Last Verified**: 2026-06-03  
+**Container Status**: 5/5 Services Healthy + 1 init service ✅
 
 ---
 
@@ -31,8 +30,9 @@
 | **dataverse** | ✅ Running | Healthy | http://localhost:8080/ | 8080 |
 | **postgres** | ✅ Running | Healthy | Internal | 5432 |
 | **solr** | ✅ Running | Healthy | Internal | 8983 |
+| **solr-init** | ✅ Completed | Exited (0) | N/A | N/A |
 | **smtp (maildev)** | ✅ Running | Healthy | http://localhost:8025/ | 8025 |
-| **bootstrap** | ✅ Completed | Success | N/A | N/A |
+| **bootstrap** | ✅ Completed | Exited (0) | N/A | N/A |
 
 ---
 
@@ -73,7 +73,7 @@ Write-Host "================================" -ForegroundColor Cyan
 
 # 1. Check container status
 Write-Host "`n1️⃣  Container Status..."
-$containers = docker-compose -f compose.yml ps --format json | ConvertFrom-Json
+$containers = docker compose -f configs\compose.yml ps --format json | ConvertFrom-Json
 $allHealthy = $true
 foreach ($container in $containers) {
     $status = $container.Status -match "Up" ? "✅" : "❌"
@@ -95,7 +95,7 @@ try {
 # 3. Check Database
 Write-Host "`n3️⃣  PostgreSQL Database..."
 try {
-    $dbCheck = docker exec compose-postgres-1 psql -U dataverse -d dataverse -c "SELECT COUNT(*) FROM pg_tables" 2>&1
+    $dbCheck = docker exec postgres psql -U dataverse -d dataverse -c "SELECT COUNT(*) FROM pg_tables" 2>&1
     if ($dbCheck -match "count") {
         Write-Host "✅ Database Connected"
     } else {
@@ -110,9 +110,12 @@ try {
 # 4. Check Solr
 Write-Host "`n4️⃣  Solr Search Engine..."
 try {
-    $solr = Invoke-WebRequest http://localhost:8983/solr/admin/ping -TimeoutSec 5 -ErrorAction Stop
-    if ($solr.StatusCode -eq 200) {
+    $solr = docker exec solr curl -sf http://localhost:8983/solr/collection1/admin/ping 2>$null
+    if ($solr -match '"status":"OK"') {
         Write-Host "✅ Solr Healthy"
+    } else {
+        Write-Host "❌ Solr Unavailable"
+        $allHealthy = $false
     }
 } catch {
     Write-Host "❌ Solr Unavailable"
@@ -128,6 +131,11 @@ if ($allHealthy) {
 }
 ```
 
+Or use the automated health check script:
+```powershell
+.\scripts\healthcheck.ps1 -Detailed
+```
+
 ---
 
 ## 🐛 Troubleshooting
@@ -138,13 +146,13 @@ if ($allHealthy) {
 
 ```powershell
 # Check container is running
-docker-compose -f compose.yml ps dataverse
+docker compose -f configs\compose.yml ps dataverse
 
 # View recent logs (last 50 lines)
-docker-compose -f compose.yml logs dataverse --tail 50
+docker compose -f configs\compose.yml logs dataverse --tail 50
 
 # See detailed errors
-docker-compose -f compose.yml logs dataverse | Select-String "ERROR|Exception" | Select-Object -First 10
+docker compose -f configs\compose.yml logs dataverse | Select-String "ERROR|Exception" | Select-Object -First 10
 ```
 
 ### Issue: See Payara page instead of Dataverse
@@ -206,36 +214,45 @@ docs/
 
 ### Start Dataverse
 ```powershell
-cd configs
-docker-compose -f compose.yml up -d
+.\scripts\start.ps1
+# Or manually:
+docker compose -f configs\compose.yml up -d
 ```
 
 ### Stop Dataverse
 ```powershell
-cd configs
-docker-compose -f compose.yml down
+docker compose -f configs\compose.yml down
 ```
 
 ### View Logs
 ```powershell
 # Real-time logs
-docker-compose -f compose.yml logs -f
+docker compose -f configs\compose.yml logs -f
 
 # Specific service
-docker-compose -f compose.yml logs dataverse
+docker compose -f configs\compose.yml logs dataverse
 
 # Last N lines
-docker-compose -f compose.yml logs --tail 100
+docker compose -f configs\compose.yml logs --tail 100
 ```
 
 ### Backup Database
 ```powershell
-docker exec compose-postgres-1 pg_dump -U dataverse dataverse > backup_$(Get-Date -Format yyyyMMdd_HHmmss).sql
+.\scripts\backup.ps1
+# Or manually:
+docker exec postgres pg_dump -U dataverse dataverse > backup_$(Get-Date -Format yyyyMMdd_HHmmss).sql
 ```
 
 ### Restore Database
 ```powershell
-cat backup_file.sql | docker exec -i compose-postgres-1 psql -U dataverse dataverse
+.\scripts\restore.ps1 -BackupPath backups\<backup-folder>
+# Or manually:
+Get-Content backup_file.sql | docker exec -i postgres psql -U dataverse dataverse
+```
+
+### Run Integration Tests
+```powershell
+.\INTEGRATION_TEST_RUNNER.ps1
 ```
 
 ---
@@ -259,7 +276,7 @@ cat backup_file.sql | docker exec -i compose-postgres-1 psql -U dataverse datave
 
 For issues encountered:
 1. Check **[Error Documentation](docs/ERRORS_AND_SOLUTIONS.md)**
-2. Review deployment logs: `docker-compose logs`
+2. Review deployment logs: `docker compose -f configs\compose.yml logs`
 3. Verify system requirements: 8GB RAM minimum
 4. Check disk space: `docker system df`
 
@@ -274,7 +291,7 @@ For issues encountered:
 
 - First deployment can take 45-60 minutes
 - Subsequent restarts are much faster (~5-10 minutes)
-- Docker volume cleanup requires `docker-compose down -v` (WARNING: deletes data)
+- Docker volume cleanup requires `docker compose -f configs\compose.yml down -v` (WARNING: deletes data)
 - Always backup database before major changes
 | **Database Host** | postgres:5432 (internal) |
 | **Email Interface** | http://localhost:8025/ |
@@ -298,16 +315,16 @@ For issues encountered:
 
 ```powershell
 # Dataverse application logs
-docker-compose -f compose.yml logs dataverse
+docker compose -f configs\compose.yml logs dataverse
 
 # Bootstrap/configuration logs
-docker-compose -f compose.yml logs bootstrap
+docker compose -f configs\compose.yml logs bootstrap
 
 # All services
-docker-compose -f compose.yml logs
+docker compose -f configs\compose.yml logs
 
 # Real-time logs
-docker-compose -f compose.yml logs -f
+docker compose -f configs\compose.yml logs -f
 ```
 
 ---
@@ -352,11 +369,11 @@ This doesn't mean there's a problem - it's expected during initialization.
 
 ```powershell
 # Check what went wrong
-docker-compose -f compose.yml logs dataverse
+docker compose -f configs\compose.yml logs dataverse
 
 # If there's an error, may need to:
-docker-compose -f compose.yml down -v
-docker-compose -f compose.yml up -d
+docker compose -f configs\compose.yml down -v
+docker compose -f configs\compose.yml up -d
 # (This will reset the database)
 ```
 
@@ -443,28 +460,28 @@ docker stats
 
 ```powershell
 # View all services
-docker-compose -f compose.yml ps
+docker compose -f configs\compose.yml ps
 
 # View specific service logs (last 50 lines)
-docker-compose -f compose.yml logs dataverse --tail=50
+docker compose -f configs\compose.yml logs dataverse --tail=50
 
 # View logs in real-time
-docker-compose -f compose.yml logs -f dataverse
+docker compose -f configs\compose.yml logs -f dataverse
 
 # Check network connectivity (from container)
-docker exec compose-dataverse-1 ping postgres
+docker exec dataverse ping postgres
 
 # Check database connectivity (from Dataverse container)
-docker exec compose-dataverse-1 bash -c "psql -h postgres -U dataverse -d dataverse -c 'SELECT version();'"
+docker exec dataverse bash -c "psql -h postgres -U dataverse -d dataverse -c 'SELECT version();'"
 
 # Restart a service
-docker-compose -f compose.yml restart dataverse
+docker compose -f configs\compose.yml restart dataverse
 
 # Stop all services (keeps data)
-docker-compose -f compose.yml stop
+docker compose -f configs\compose.yml stop
 
 # Start services again
-docker-compose -f compose.yml up -d
+docker compose -f configs\compose.yml up -d
 ```
 
 ---

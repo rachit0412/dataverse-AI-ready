@@ -66,23 +66,27 @@ Docker Compose version v2.x.x
 
 ### Step 2.1: Download Compose Configuration
 
-Download the official compose file:
+This repository includes a production-ready compose configuration in `configs/compose.yml` with:
+- Solr auto-initialization (solr-init service)
+- Resource limits and security hardening
+- Proper health checks and dependency ordering
+
+Alternatively, download the official compose file:
 ```powershell
 Invoke-WebRequest -Uri "https://guides.dataverse.org/en/latest/_downloads/f08d721f1b85dd424dff557bf65fdc5c/compose.yml" -OutFile "compose.yml"
 ```
 
-Or use the compose.yml file provided in this repository.
+Or use the compose.yml file provided in this repository (recommended).
 
-### Step 2.2: Create Directory Structure
+### Step 2.2: Data Persistence
 
-```powershell
-# Create directories for persistent data
-New-Item -ItemType Directory -Force -Path "data"
-New-Item -ItemType Directory -Force -Path "data/postgres"
-New-Item -ItemType Directory -Force -Path "data/solr"
-New-Item -ItemType Directory -Force -Path "data/dataverse"
-New-Item -ItemType Directory -Force -Path "data/secrets"
-```
+Docker named volumes are used for persistent data (created automatically on first run):
+
+| Volume | Purpose |
+|--------|--------|
+| `dataverse-postgres-data` | PostgreSQL database files |
+| `dataverse-solr-data` | Solr search index |
+| `dataverse-app-data` | Uploaded files |
 
 ### Step 2.3: Configure Environment (Optional)
 
@@ -120,21 +124,28 @@ This downloads:
 
 ### Step 2.5: Start Dataverse
 
-**Option A: Foreground Mode** (see all logs):
+**Option A: Enterprise startup script** (recommended):
 ```powershell
-docker compose up
+.\scripts\start.ps1
+```
+This builds the solr-init image, starts all containers, waits for readiness, and opens the browser.
+
+**Option B: Foreground Mode** (see all logs):
+```powershell
+docker compose -f configs\compose.yml up
 ```
 
-**Option B: Background Mode** (detached):
+**Option C: Background Mode** (detached):
 ```powershell
-docker compose up -d
+docker compose -f configs\compose.yml up -d
 ```
 
 **What happens during startup:**
 1. PostgreSQL starts and initializes database (1-2 minutes)
 2. Solr starts and creates search core (30 seconds)
-3. Dataverse application starts (2-3 minutes)
-4. Bootstrap container configures Dataverse (5-10 minutes)
+3. **solr-init** creates `collection1` with Dataverse schema (automatic)
+4. Dataverse application starts (2-3 minutes)
+5. Bootstrap container configures Dataverse (5-10 minutes)
 
 **Total time:** 10-15 minutes on first run
 
@@ -155,16 +166,17 @@ Press `Ctrl+C` to stop viewing logs.
 ### Step 2.7: Verify All Containers are Running
 
 ```powershell
-docker compose ps
+docker compose -f configs\compose.yml ps
 ```
 
 Expected output:
 ```
-NAME         IMAGE                  STATUS         PORTS
-dataverse    gdcc/dataverse:latest  Up (healthy)   0.0.0.0:8080->8080/tcp
-postgres     postgres:13            Up (healthy)   5432/tcp
-solr         solr:9.3.0             Up             8983/tcp
-smtp         mailhog/mailhog        Up             25/tcp, 8025/tcp
+NAME         IMAGE                  STATUS                  PORTS
+dataverse    gdcc/dataverse:latest  Up (healthy)            0.0.0.0:8080->8080/tcp
+postgres     postgres:13            Up (healthy)            5432/tcp
+solr         solr:9.3.0             Up (healthy)            8983/tcp
+solr-init    (custom)               Exited (0)              
+smtp         maildev/maildev        Up                      8025/tcp
 ```
 
 ## ✅ Phase 3: Verification
@@ -395,29 +407,15 @@ Get-Content backup_20260410.sql | docker compose exec -T postgres psql -U datave
 
 **File Storage Backup:**
 ```powershell
-# Backup data directory
-Compress-Archive -Path "data\dataverse" -DestinationPath "dataverse_files_$(Get-Date -Format 'yyyyMMdd').zip"
+# Backup uploaded files from Docker volume
+docker run --rm -v dataverse-app-data:/data -v ${PWD}:/backup alpine tar czf /backup/dataverse_files_$(Get-Date -Format 'yyyyMMdd').tar.gz -C /data .
 ```
 
 **Automated Backup Script:**
 ```powershell
-# backup.ps1
-$date = Get-Date -Format 'yyyyMMdd'
-$backupDir = "backups\$date"
-New-Item -ItemType Directory -Force -Path $backupDir
-
-# Database
-docker compose exec postgres pg_dump -U dataverse dataverse > "$backupDir\database.sql"
-
-# Files
-Copy-Item -Path "data\dataverse" -Destination "$backupDir\files" -Recurse
-
-# Compress
-Compress-Archive -Path $backupDir -DestinationPath "backups\backup_$date.zip"
-Remove-Item -Path $backupDir -Recurse
+# Use the provided backup script
+.\scripts\backup.ps1
 ```
-
-Schedule with Windows Task Scheduler.
 
 ### Step 6.3: Update Dataverse
 
@@ -458,7 +456,7 @@ Write-Host "================================" -ForegroundColor Cyan
 
 # 1. Container Status
 Write-Host "`n1️⃣  Container Status:"
-$containers = docker-compose -f compose.yml ps --format json | ConvertFrom-Json
+$containers = docker compose -f configs\compose.yml ps --format json | ConvertFrom-Json
 foreach ($container in $containers) {
     if ($container.Status -match "Up") {
         Write-Host "✅ $($container.Names): Running"
@@ -479,7 +477,7 @@ try {
 # 3. Database
 Write-Host "`n3️⃣  PostgreSQL Database:"
 try {
-    docker exec compose-postgres-1 pg_isready -U dataverse > $null 2>&1
+    docker exec postgres pg_isready -U dataverse > $null 2>&1
     Write-Host "✅ Database Healthy"
 } catch {
     Write-Host "❌ Database Unavailable"
@@ -506,7 +504,7 @@ try {
 # Application is still deploying. Wait 10-30 minutes on first run.
 
 # Monitor deployment progress:
-docker-compose -f compose.yml logs -f dataverse | Select-String "deployed|ready" -Context 1
+docker compose -f configs\compose.yml logs -f dataverse | Select-String "deployed|ready" -Context 1
 
 # Check API when ready:
 Invoke-RestMethod http://localhost:8080/api/info/version
@@ -519,8 +517,8 @@ Invoke-RestMethod http://localhost:8080/api/info/version
 **Solution:**
 ```powershell
 # Quick fix (WARNING: deletes all data):
-docker-compose -f compose.yml down -v
-docker-compose -f compose.yml up -d
+docker compose -f configs\compose.yml down -v
+docker compose -f configs\compose.yml up -d
 
 # Or preserve data - see ERR-DB-001 for detailed recovery steps
 ```
@@ -535,7 +533,7 @@ docker-compose -f compose.yml up -d
 # Application continues deploying in background.
 
 # Just wait and check periodically:
-docker-compose -f compose.yml logs dataverse | tail -20
+docker compose -f configs\compose.yml logs dataverse --tail 20
 ```
 
 #### Issue: Cannot Access localhost:8080
@@ -586,16 +584,16 @@ docker system prune -a
 
 ```powershell
 # Follow all logs
-docker compose -f compose.yml logs -f
+docker compose -f configs\compose.yml logs -f
 
 # Follow specific service
-docker compose -f compose.yml logs -f dataverse
+docker compose -f configs\compose.yml logs -f dataverse
 
 # Last 100 lines
-docker compose -f compose.yml logs --tail 100 dataverse
+docker compose -f configs\compose.yml logs --tail 100 dataverse
 
 # With timestamps
-docker compose -f compose.yml logs --timestamps --tail 50
+docker compose -f configs\compose.yml logs --timestamps --tail 50
 ```
 
 #### Search for Specific Errors
@@ -640,7 +638,7 @@ docker compose version
 
 ```powershell
 # Get container ID
-$container_id = docker ps --format "{{.ID}}" -f "name=compose-dataverse"
+$container_id = docker ps --format "{{.ID}}" -f "name=dataverse"
 
 # View container details
 docker inspect $container_id
@@ -653,7 +651,7 @@ docker inspect $container_id | Select-String -Pattern "Memory|CpuShares"
 
 ```powershell
 # Connect directly to database
-docker exec -it compose-postgres-1 psql -U dataverse -d dataverse
+docker exec -it postgres psql -U dataverse -d dataverse
 
 # Once connected (psql prompt), try:
 # SELECT COUNT(*) FROM dvobject;  -- Count objects

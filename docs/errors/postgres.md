@@ -64,19 +64,19 @@ When Docker containers restart:
 cd configs
 
 # 1. Stop all services
-docker-compose -f compose.yml down -v
+docker compose -f configs\compose.yml down -v
 
 # 2. Remove all volumes to force recreation
 docker volume rm $(docker volume ls -q | Select-String dataverse) -Force
 
 # 3. Start fresh
-docker-compose -f compose.yml up -d
+docker compose -f configs\compose.yml up -d
 
 # 4. Wait for initialization
 Start-Sleep -Seconds 30
 
 # 5. Verify status
-docker-compose -f compose.yml ps
+docker compose -f configs\compose.yml ps
 ```
 
 **Expected output:**
@@ -95,10 +95,10 @@ Up 37 seconds (healthy)
 
 ```powershell
 # 1. Backup the database FIRST
-docker exec compose-postgres-1 pg_dump -U dataverse dataverse > backup_$(Get-Date -Format yyyyMMdd).sql
+docker exec postgres pg_dump -U dataverse dataverse > backup_$(Get-Date -Format yyyyMMdd).sql
 
 # 2. Stop containers (but keep volumes)
-docker-compose -f compose.yml down
+docker compose -f configs\compose.yml down
 
 # 3. Inspect the old pg_hba.conf
 docker run --rm -v postgres-data:/data alpine cat /data/pg_hba.conf
@@ -107,13 +107,13 @@ docker run --rm -v postgres-data:/data alpine cat /data/pg_hba.conf
 docker volume rm configs_postgres-data
 
 # 5. Restart
-docker-compose -f compose.yml up -d
+docker compose -f configs\compose.yml up -d
 
 # 6. Wait for PostgreSQL to initialize
 Start-Sleep -Seconds 15
 
 # 7. Restore your backup
-cat backup_*.sql | docker exec -i compose-postgres-1 psql -U dataverse dataverse
+cat backup_*.sql | docker exec -i postgres psql -U dataverse dataverse
 ```
 
 ---
@@ -174,7 +174,7 @@ Add health monitoring:
 ```powershell
 # Monitor database health
 while ($true) {
-    $status = docker exec compose-postgres-1 pg_isready -U dataverse
+    $status = docker exec postgres pg_isready -U dataverse
     if ($status -ne "accepting connections") {
         Write-Host "⚠️ Database health warning!" -ForegroundColor Yellow
         # Send alert here
@@ -191,11 +191,11 @@ while ($true) {
 
 ```powershell
 # 1. Check PostgreSQL is healthy
-docker-compose -f compose.yml ps
+docker compose -f configs\compose.yml ps
 # Should show: postgres ... Healthy ✅
 
 # 2. Test database connection
-docker exec compose-postgres-1 psql -U dataverse -d dataverse -c "SELECT version();" 
+docker exec postgres psql -U dataverse -d dataverse -c "SELECT version();" 
 # Should return: PostgreSQL 13.x ...
 
 # 3. Check Dataverse can connect

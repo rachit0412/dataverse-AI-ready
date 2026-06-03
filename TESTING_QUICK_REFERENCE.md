@@ -20,7 +20,7 @@
 
 ```powershell
 # 1. Verify deployment
-docker-compose ps
+docker compose ps
 curl http://localhost:8080/api/info/version
 
 # 2. Create test user
@@ -40,9 +40,9 @@ curl http://localhost:8080/api/admin/userData/tu1?key=secret
 
 ### Health Checks
 ```powershell
-docker-compose ps                          # All containers running?
+docker compose ps                          # All containers running?
 curl http://localhost:8080/api/info/version         # API responding?
-docker exec compose-postgres-1 pg_isready -U dataverse  # DB healthy?
+docker exec postgres pg_isready -U dataverse  # DB healthy?
 ```
 
 ### Setup (One-time)
@@ -152,7 +152,7 @@ Write-Host "=== Dataverse Testing Environment ===" -ForegroundColor Cyan
 
 # Check deployment
 Write-Host "[1] Containers:" -ForegroundColor Yellow
-docker-compose ps | Select-Object NAME, STATUS
+docker compose ps | Select-Object NAME, STATUS
 
 # Check API
 Write-Host "[2] API Health:" -ForegroundColor Yellow
@@ -202,10 +202,10 @@ START HERE:
 
 | Issue | Symptom | Fix | Time |
 |-------|---------|-----|------|
-| No connection | "Connection refused" | `docker-compose up -d` | 35s |
+| No connection | "Connection refused" | `docker compose up -d` | 35s |
 | No auth | "401 Unauthorized" | Set burrito key (see TESTING_WORKFLOW_GUIDE.md) | 30s |
 | No Java | "mvn: command not found" | `choco install openjdk maven` | 5min |
-| DB locked | "Database error" | `docker-compose down -v && up -d` | 2min |
+| DB locked | "Database error" | `docker compose down -v && up -d` | 2min |
 | Tests timeout | Tests take too long | Increase heap: `mvn -Xmx2g verify` | 30s |
 
 ---

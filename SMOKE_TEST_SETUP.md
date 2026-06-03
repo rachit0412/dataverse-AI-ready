@@ -27,13 +27,13 @@ try {
 # 2. Containers running
 Write-Host "`n[2/8] Checking containers..." -ForegroundColor Yellow
 try {
-    $containers = docker-compose -f "configs/compose.yml" ps --format json | ConvertFrom-Json
+    $containers = docker compose -f configs\compose.yml ps --format json | ConvertFrom-Json
     $running = $containers | Where-Object { $_.State -eq "running" } | Measure-Object | Select-Object -ExpandProperty Count
     if ($running -ge 4) {
         Write-Host "✅ All services running ($running/4)" -ForegroundColor Green
         $checks_pass++
     } else {
-        Write-Host "⚠️  Only $running/4 services running. Start with: docker-compose up -d" -ForegroundColor Yellow
+        Write-Host "⚠️  Only $running/4 services running. Start with: docker compose up -d" -ForegroundColor Yellow
     }
 } catch {
     Write-Host "❌ Docker Compose failed: $_" -ForegroundColor Red
@@ -49,13 +49,13 @@ try {
         $checks_pass++
     }
 } catch {
-    Write-Host "❌ Dataverse API not responding. Check: docker-compose logs dataverse" -ForegroundColor Red
+    Write-Host "❌ Dataverse API not responding. Check: docker compose logs dataverse" -ForegroundColor Red
 }
 
 # 4. PostgreSQL
 Write-Host "`n[4/8] Checking PostgreSQL..." -ForegroundColor Yellow
 try {
-    docker exec compose-postgres-1 pg_isready -U dataverse 2>&1 | Out-Null
+    docker exec postgres pg_isready -U dataverse 2>&1 | Out-Null
     Write-Host "✅ PostgreSQL accepting connections" -ForegroundColor Green
     $checks_pass++
 } catch {
@@ -136,7 +136,7 @@ Next steps:
 
 Common fixes:
 • Docker not running: Start Docker Desktop
-• Dataverse not responding: docker-compose up -d
+• Dataverse not responding: docker compose up -d
 • Java/Maven missing: choco install openjdk maven
 " -ForegroundColor Yellow
 }
@@ -240,9 +240,9 @@ Q: What do you want to test?
 │  └─ Option B (Comprehensive): mvn verify -P all-unit-tests,integration-tests → ~10 min
 │
 └─ "Debug test failure"
-   ├─ Is it network? → Check docker-compose ps + curl endpoints
+   ├─ Is it network? → Check docker compose ps + curl endpoints
    ├─ Is it auth? → Verify API key and user created
-   ├─ Is it data? → Reset DB with docker-compose down -v
+   ├─ Is it data? → Reset DB with docker compose down -v
    └─ Is it code? → Review test log + stack trace
 ```
 
@@ -253,10 +253,10 @@ Q: What do you want to test?
 | Issue | Fix | Time |
 |-------|-----|------|
 | 401 Unauthorized | `curl -X PUT -d "BurritoBep" http://localhost:8080/api/admin/settings/:BurritoBep` | 30s |
-| Connection refused | `docker-compose up -d` + wait 30s | 35s |
+| Connection refused | `docker compose up -d` + wait 30s | 35s |
 | Maven not found | `choco install maven openjdk` | 5min |
 | Tests timeout | Increase: `mvn verify -DargLine="-Dclient.timeout=60000"` | 30s |
-| DB connection error | `docker-compose down -v && docker-compose up -d` | 2min |
+| DB connection error | `docker compose down -v && docker compose up -d` | 2min |
 | Out of memory | Docker Desktop → Settings → Resources → increase RAM | 1min |
 
 ---

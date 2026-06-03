@@ -76,7 +76,7 @@ The bootstrap container exits, but the Dataverse application continues running.
 
 ```powershell
 # Monitor Dataverse deployment progress
-docker-compose -f compose.yml logs -f dataverse | Select-String "deployment|Initializ|Application"
+docker compose -f configs\compose.yml logs -f dataverse | Select-String "deployment|Initializ|Application"
 
 # Check when API becomes ready
 while ($true) {
@@ -278,7 +278,7 @@ dataverse:
 - **Don't panic when bootstrap times out** - This is normal for first deployment
 - Wait at least 30 minutes before troubleshooting
 - Monitor API directly instead of relying on bootstrap exit code
-- Use `docker-compose logs dataverse` to track actual progress
+- Use `docker compose logs dataverse` to track actual progress
 - Bootstrap timeout is NOT a deployment failure - it's just a health check timeout
 - The application usually succeeds even if bootstrap fails
 

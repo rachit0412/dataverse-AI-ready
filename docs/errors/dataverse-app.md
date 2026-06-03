@@ -76,11 +76,11 @@ This is typically a **secondary symptom** of the PostgreSQL authentication issue
 
 ```powershell
 # Check if PostgreSQL is accepting connections
-docker exec compose-postgres-1 pg_isready -U dataverse
+docker exec postgres pg_isready -U dataverse
 # Expected: "accepting connections"
 
 # Test direct connection
-docker exec compose-postgres-1 psql -U dataverse -d dataverse -c "SELECT COUNT(*) FROM pg_tables;"
+docker exec postgres psql -U dataverse -d dataverse -c "SELECT COUNT(*) FROM pg_tables;"
 # Should return a number (list of tables)
 ```
 
@@ -95,7 +95,7 @@ docker exec compose-postgres-1 psql -U dataverse -d dataverse -c "SELECT COUNT(*
 
 ```powershell
 # Follow the Dataverse deployment logs
-docker-compose -f compose.yml logs -f dataverse | Select-String -Pattern "deployment|deployed|ERROR|Exception" -Context 2
+docker compose -f configs\compose.yml logs -f dataverse | Select-String -Pattern "deployment|deployed|ERROR|Exception" -Context 2
 
 # Watch for these good signs:
 # ✅ "deployment astradb started successfully"
@@ -118,8 +118,8 @@ docker-compose -f compose.yml logs -f dataverse | Select-String -Pattern "deploy
 ```
 
 If deployment stalls:
-1. Stop containers: `docker-compose -f compose.yml down`
-2. Check logs for errors: `docker-compose -f compose.yml logs dataverse | tail -100`
+1. Stop containers: `docker compose -f configs\compose.yml down`
+2. Check logs for errors: `docker compose -f configs\compose.yml logs dataverse | tail -100`
 3. See section below: "Troubleshooting Stuck Deployment"
 
 ---
@@ -128,15 +128,15 @@ If deployment stalls:
 
 ```powershell
 # Option A: Soft restart (keep containers)
-docker-compose -f compose.yml restart dataverse
+docker compose -f configs\compose.yml restart dataverse
 Start-Sleep -Seconds 10
 
 # Option B: Hard restart (recreate containers)
-docker-compose -f compose.yml up -d  # This will recreate if needed
+docker compose -f configs\compose.yml up -d  # This will recreate if needed
 
 # Option C: Full reset (use only if Option B fails)
-docker-compose -f compose.yml down
-docker-compose -f compose.yml up -d
+docker compose -f configs\compose.yml down
+docker compose -f configs\compose.yml up -d
 ```
 
 ---
@@ -145,11 +145,11 @@ docker-compose -f compose.yml up -d
 
 ```powershell
 # 1. Check container status
-docker-compose -f compose.yml ps dataverse
+docker compose -f configs\compose.yml ps dataverse
 # Should show: "Up X minutes"
 
 # 2. Check application logs for deployed message
-docker-compose -f compose.yml logs dataverse | Select-String "deployed successfully"
+docker compose -f configs\compose.yml logs dataverse | Select-String "deployed successfully"
 
 # 3. Test API endpoint
 $response = Invoke-WebRequest http://localhost:8080/api/info/version -ErrorAction SilentlyContinue
@@ -180,29 +180,29 @@ if ($html.Content -match "Login") {
 
 ```powershell
 # 1. Check the current deployment log
-docker-compose -f compose.yml logs dataverse > deployment_log.txt
+docker compose -f configs\compose.yml logs dataverse > deployment_log.txt
 Get-Content deployment_log.txt | Tail -50  # Last 50 lines
 
 # 2. Search for specific errors
 Select-String "ERROR|Exception|FAILED" deployment_log.txt | Select -First 10
 
 # 3. Check Payara server log (if accessible)
-docker exec compose-dataverse-1 cat /opt/payara/logs/payara.log | Tail -50
+docker exec dataverse cat /opt/payara/logs/payara.log | Tail -50
 ```
 
 **If stuck on "Undeploying" or "Deploying astradb":**
 ```powershell
 # Force restart
-docker-compose -f compose.yml down
-docker-compose -f compose.yml rm -f dataverse
+docker compose -f configs\compose.yml down
+docker compose -f configs\compose.yml rm -f dataverse
 docker volume rm configs_dataverse-data  # WARNING: Deletes uploaded data!
-docker-compose -f compose.yml up -d dataverse
+docker compose -f configs\compose.yml up -d dataverse
 
 # Wait 60 seconds
 Start-Sleep -Seconds 60
 
 # Check if it's deploying now
-docker-compose -f compose.yml logs dataverse | Tail -20
+docker compose -f configs\compose.yml logs dataverse | Tail -20
 ```
 
 ---
@@ -211,7 +211,7 @@ docker-compose -f compose.yml logs dataverse | Tail -20
 
 ```powershell
 # Check memory usage
-docker stats compose-dataverse-1 --no-stream
+docker stats dataverse --no-stream
 
 # Increase heap size in compose.yml
 # Find and modify:
@@ -259,7 +259,7 @@ dataverse:
 ```powershell
 # Create a startup monitor script
 while ($true) {
-    $logs = docker-compose logs dataverse | Select-String "deployed successfully"
+    $logs = docker compose logs dataverse | Select-String "deployed successfully"
     if ($logs) {
         Write-Host "✅ Deployment complete!" -ForegroundColor Green
         break
@@ -280,9 +280,9 @@ while ($true) {
 2. **Database setup verification:**
    ```powershell
    # Before starting Dataverse:
-   docker-compose -f compose.yml up -d postgres
+   docker compose -f configs\compose.yml up -d postgres
    Start-Sleep -Seconds 30
-   docker exec compose-postgres-1 psql -U dataverse -d dataverse -c "\dt"
+   docker exec postgres psql -U dataverse -d dataverse -c "\dt"
    # Should list Dataverse tables
    ```
 
@@ -290,7 +290,7 @@ while ($true) {
    ```powershell
    # Create a health check script
    $checks = @{
-       "PostgreSQL" = "docker exec compose-postgres-1 pg_isready -U dataverse"
+       "PostgreSQL" = "docker exec postgres pg_isready -U dataverse"
        "Solr" = "curl -s http://localhost:8983/solr/admin/ping"
        "Disk Space" = "df -h"
    }

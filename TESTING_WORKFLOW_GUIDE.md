@@ -95,10 +95,10 @@ Extract and run tests from the running Docker container:
 
 ```powershell
 # 1. List available test files in running container
-docker exec compose-dataverse-1 bash -c "find /opt/payara -name '*Test.jar' 2>/dev/null" | head -20
+docker exec dataverse bash -c "find /opt/payara -name '*Test.jar' 2>/dev/null" | head -20
 
 # 2. Extract test JARs (if available)
-docker exec compose-dataverse-1 bash -c "find /opt/payara/glassfish/domains/domain1 -name '*test*' -type f 2>/dev/null" | head -10
+docker exec dataverse bash -c "find /opt/payara/glassfish/domains/domain1 -name '*test*' -type f 2>/dev/null" | head -10
 
 # 3. View Dataverse build info (shows version, build time)
 curl -s http://localhost:8080/api/info/version | ConvertFrom-Json | Format-Table
@@ -645,11 +645,11 @@ java.net.ConnectException: Connection refused at
 
 1. **Dataverse not running**
    ```powershell
-   docker-compose ps dataverse
+   docker compose ps dataverse
    # Should show: STATUS = "Up"
    
    # Fix:
-   docker-compose up -d dataverse
+   docker compose up -d dataverse
    Start-Sleep -Seconds 30  # Wait for startup
    ```
 
@@ -676,10 +676,10 @@ java.net.ConnectException: Connection refused at
 curl http://localhost:8080/api/info/version
 
 # Step 2: If 404 or timeout, check container logs
-docker-compose logs dataverse | tail -50
+docker compose logs dataverse | tail -50
 
 # Step 3: Restart container
-docker-compose restart dataverse
+docker compose restart dataverse
 Start-Sleep -Seconds 20
 
 # Step 4: Try test again with verbose output
@@ -733,7 +733,7 @@ curl -X POST \
   http://localhost:8080/api/admin/authorizationUtil/dumpRoles
 
 # If that fails, check container logs for auth setup
-docker-compose exec dataverse bash -c "grep -i auth /opt/payara/glassfish/domains/domain1/logs/server.log" | tail -20
+docker compose exec dataverse bash -c "grep -i auth /opt/payara/glassfish/domains/domain1/logs/server.log" | tail -20
 ```
 
 ---
@@ -752,14 +752,14 @@ Expected status code 200 but was 400
 1. **Database not initialized (first run)**
    ```powershell
    # Check PostgreSQL
-   docker-compose logs postgres | grep -i init
+   docker compose logs postgres | grep -i init
    
    # Wait longer:
    Start-Sleep -Seconds 60
    
    # Restart if needed:
-   docker-compose down -v
-   docker-compose up -d
+   docker compose down -v
+   docker compose up -d
    Start-Sleep -Seconds 90  # First run takes time
    ```
 
@@ -771,12 +771,12 @@ Expected status code 200 but was 400
    ```powershell
    # Clean up old test data:
    # Option A: Reset database
-   docker-compose down -v
-   docker-compose up -d
+   docker compose down -v
+   docker compose up -d
    
    # Option B: Point to clean test database
    # Create new schema in PostgreSQL
-   docker-compose exec postgres bash -c \
+   docker compose exec postgres bash -c \
      "psql -U dataverse -c 'DROP DATABASE test_dataverse; CREATE DATABASE test_dataverse;'"
    ```
 
@@ -794,8 +794,8 @@ Expected status code 200 but was 400
 **Fix Steps:**
 ```powershell
 # Complete reset (nuclear option - deletes all data)
-docker-compose down -v
-docker-compose up -d
+docker compose down -v
+docker compose up -d
 Start-Sleep -Seconds 90
 # Re-run setup steps
 ```
@@ -906,8 +906,8 @@ Start-Process "$(Get-Item target/site/jacoco/index.html | % FullName)"
 |------|-----------|-----------|----------|
 | 1 | **Dataverse not running** | `curl http://localhost:8080/api/info/version` → 200 OK | P0 |
 | 2 | **Wrong API key** | `curl -H "X-Dataverse-key: secret" http://localhost:8080/...` → 200 | P1 |
-| 3 | **Database not initialized** | Check logs: `docker-compose logs postgres` | P1 |
-| 4 | **Test data conflicts** | Clear DB: `docker-compose down -v && up -d` | P2 |
+| 3 | **Database not initialized** | Check logs: `docker compose logs postgres` | P1 |
+| 4 | **Test data conflicts** | Clear DB: `docker compose down -v && up -d` | P2 |
 | 5 | **Maven/Java wrong version** | `mvn -version` && `java -version` | P2 |
 
 ---
@@ -958,7 +958,7 @@ Start-Process "$(Get-Item target/site/jacoco/index.html | % FullName)"
    # Test deployment stability
    
    # 1. Check containers
-   docker-compose ps
+   docker compose ps
    
    # 2. Verify services
    curl http://localhost:8080/api/info/version
@@ -1027,7 +1027,7 @@ mvn -X verify -Dit.test=BuiltinUsersIT#testCreateUser
 
 ## 📋 Final Checklist: Ready to Test?
 
-- [ ] Dataverse running: `docker-compose ps` shows all healthy
+- [ ] Dataverse running: `docker compose ps` shows all healthy
 - [ ] API responding: `curl http://localhost:8080/api/info/version` returns 200
 - [ ] Java installed: `java -version` shows Java 11+
 - [ ] Maven installed: `mvn -version` shows Maven 3.8+
