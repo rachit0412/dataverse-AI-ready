@@ -298,6 +298,39 @@ function Test-DiskSpace {
     }
 }
 
+function Test-SolrCollection {
+    $checkName = "solr_collection"
+
+    try {
+        $result = docker exec solr curl -sf "http://localhost:8983/solr/collection1/admin/ping" 2>$null
+        if ($result -match '"status":"OK"') {
+            $healthResults.checks[$checkName] = @{
+                status = "healthy"
+                message = "Solr collection1 is healthy"
+            }
+            Write-HealthLog "Solr collection1 is healthy (ping OK)" "OK"
+            return $true
+        } else {
+            $healthResults.checks[$checkName] = @{
+                status = "unhealthy"
+                message = "Solr collection1 ping failed"
+            }
+            $healthResults.overall_status = "unhealthy"
+            Write-HealthLog "Solr collection1 is not responding" "ERROR"
+            return $false
+        }
+    } catch {
+        $healthResults.checks[$checkName] = @{
+            status = "unhealthy"
+            message = "Could not reach Solr collection1"
+            error = $_.Exception.Message
+        }
+        $healthResults.overall_status = "unhealthy"
+        Write-HealthLog "Could not reach Solr collection1: $_" "ERROR"
+        return $false
+    }
+}
+
 function Test-MemoryUsage {
     $checkName = "memory_usage"
     
@@ -365,6 +398,7 @@ try {
     $allHealthy = (Test-ContainerHealth) -and $allHealthy
     $allHealthy = (Test-DataverseAPI) -and $allHealthy
     $allHealthy = (Test-DatabaseConnection) -and $allHealthy
+    $allHealthy = (Test-SolrCollection) -and $allHealthy
     $allHealthy = (Test-DiskSpace) -and $allHealthy
     $allHealthy = (Test-MemoryUsage) -and $allHealthy
     
